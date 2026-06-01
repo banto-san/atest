@@ -61,7 +61,7 @@ HEADER_FOUND = [
 ]
 HEADER_NOT_FOUND = [
     "検索した名前", "元の住所", "検索用住所", "判定結果（理由）",
-    "電話番号印", "発見した電話番号（代表）", "番号が見つかったサイト（社名一致のみ）",
+    "電話番号印", "発見した電話番号（代表）", "番号が見つかったサイト（社名・住所一致のみ）",
     "【検索結果】1ページ目URL", "チェック日時"
 ]
 
@@ -128,12 +128,20 @@ def html_to_text(html):
     text = re.sub(r'<[^>]+>', ' ', body)
     return text
 
-# 💡 1つのサイトを開いて「会社名の一致確認」と「電話番号探索」を行う関数
-#    戻り値は dict。 name_matched=True かつ phone があるときだけ信用してよい。
-def inspect_site(url, org_name, driver=None):
+# 💡 ページの中身に住所が載っているか確認する（番地より前の「都道府県＋市区町村＋町名」で照合）
+def page_has_address(text, clean_address):
+    if not clean_address:
+        return False
+    norm_text = re.sub(r'\s', '', text)
+    norm_addr = re.sub(r'\s', '', clean_address)
+    return bool(norm_addr) and norm_addr in norm_text
+
+# 💡 1つのサイトを開いて「会社名＋住所の一致確認」と「電話番号探索」を行う関数
+#    戻り値は dict。 name_matched と address_matched の両方が True かつ phone があるときだけ信用してよい。
+def inspect_site(url, org_name, clean_address, driver=None):
     result = {
         "url": url, "fetched": False, "phone": "", "how": "",
-        "name_matched": False, "page_title": "",
+        "name_matched": False, "address_matched": False, "page_title": "",
     }
 
     html = ""
@@ -172,6 +180,9 @@ def inspect_site(url, org_name, driver=None):
     if clean_org:
         if clean_org in clean_company_name(result["page_title"]) or clean_org in clean_company_name(text):
             result["name_matched"] = True
+
+    # --- 🚨 住所の一致確認（社名だけだと同名他社の恐れがあるので住所でも裏取り） ---
+    result["address_matched"] = page_has_address(text, clean_address)
 
     # --- 電話番号の抽出（tel:リンク最優先 → 本文の正規表現） ---
     tel_links = re.findall(r'href=["\']tel:([+\d\-\(\)\s]+)["\']', html, re.IGNORECASE)
@@ -350,36 +361,39 @@ try:
                     # ==========================================
                     print(f"❌ {match_reason}。 [GBPなし]→1ページ目の全サイトから電話番号を探します。")
 
-                    first_phone = ""        # 代表として記録する電話番号（社名一致の最初の1件）
-                    verified_sites = []     # 社名が一致して番号が取れたサイトの記録
-                    skipped_mismatch = 0    # 番号はあったが社名不一致で除外した件数
+                    first_phone = ""        # 代表として記録する電話番号（社名＋住所一致の最初の1件）
+                    verified_sites = []     # 社名・住所が一致して番号が取れたサイトの記録
+                    skipped_mismatch = 0    # 番号はあったが社名or住所不一致で除外した件数
 
                     for site_url in search_urls:   # 💡 1ページ目すべてを探索
-                        res = inspect_site(site_url, org_name, driver=driver)
+                        res = inspect_site(site_url, org_name, clean_address, driver=driver)
 
-                        if res["phone"] and res["name_matched"]:
-                            # ✅ 社名一致 ＆ 番号あり → 信用して採用
-                            print(f"  ✅📞 {res['phone']}（{res['how']} / 社名一致） @ {site_url}")
+                        if res["phone"] and res["name_matched"] and res["address_matched"]:
+                            # ✅ 社名＋住所が一致 ＆ 番号あり → 信用して採用
+                            print(f"  ✅📞 {res['phone']}（{res['how']} / 社名・住所 一致） @ {site_url}")
                             if not first_phone:
                                 first_phone = res["phone"]
                             verified_sites.append(
-                                f"{res['phone']}（{res['how']}）\n  └ URL: {site_url}\n  └ ページ会社名: {res['page_title']}"
+                                f"{res['phone']}（{res['how']} / 社名・住所一致）\n  └ URL: {site_url}\n  └ ページ会社名: {res['page_title']}"
                             )
-                        elif res["phone"] and not res["name_matched"]:
-                            # ⚠️ 番号はあるが社名が一致しない → 情報不一致防止のため除外
+                        elif res["phone"]:
+                            # ⚠️ 番号はあるが社名or住所が一致しない → 情報不一致防止のため除外
                             skipped_mismatch += 1
-                            print(f"  ⚠️ 番号あり・但し社名不一致のため除外 @ {site_url}（ページ: {res['page_title']}）")
+                            ng = []
+                            if not res["name_matched"]: ng.append("社名")
+                            if not res["address_matched"]: ng.append("住所")
+                            print(f"  ⚠️ 番号あり・但し{'/'.join(ng)}不一致のため除外 @ {site_url}（ページ: {res['page_title']}）")
                         else:
                             print(f"  ・番号なし @ {site_url}")
 
                         time.sleep(PHONE_FETCH_WAIT)
 
                     if first_phone:
-                        phone_mark = "📞あり（社名一致）"
+                        phone_mark = "📞あり（社名・住所一致）"
                     else:
                         phone_mark = "電話番号なし"
                         if skipped_mismatch:
-                            phone_mark += f"（社名不一致で{skipped_mismatch}件除外）"
+                            phone_mark += f"（社名/住所不一致で{skipped_mismatch}件除外）"
 
                     sites_str = "\n".join(verified_sites)
                     print(f"  → 判定: {phone_mark}（採用サイト {len(verified_sites)}件 / 除外 {skipped_mismatch}件）")
