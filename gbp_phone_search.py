@@ -53,6 +53,18 @@ SPREADSHEET_ID = '1bh7hSMQvkB_xrHu4vqDzqSb5zB7V58nXBzQDmltXOYQ'
 SHEET_FOUND = 'GBPあり（一致）'
 SHEET_NOT_FOUND = 'GBPなし・不一致'
 
+# 💡 各シートの見出し（データの列順と必ず一致させること！）
+HEADER_FOUND = [
+    "検索した名前", "元の住所", "検索用住所", "【GBP】会社名", "【GBP】業種",
+    "【GBP】住所", "【GBP】電話番号", "【GBP】ウェブサイト", "【GBP】マップURL",
+    "【検索結果】1ページ目URL", "チェック日時"
+]
+HEADER_NOT_FOUND = [
+    "検索した名前", "元の住所", "検索用住所", "判定結果（理由）",
+    "電話番号印", "発見した電話番号（代表）", "番号が見つかったサイト（社名一致のみ）",
+    "【検索結果】1ページ目URL", "チェック日時"
+]
+
 # 💡 電話番号探索の設定
 PHONE_FETCH_TIMEOUT = 10   # requestsで1サイトを読み込む最大秒数
 PHONE_FETCH_WAIT = 1       # サイト間の待機秒数（アクセス過多防止）
@@ -85,6 +97,22 @@ def init_driver():
     driver = webdriver.Chrome(service=service, options=options)
     return driver
 
+# 💡 シートの1行目（見出し）が正しい並びになっているか確認して、違えば直す
+#    既存シートが古い見出しのままでも、これで毎回そろえます。
+def ensure_header(ws, header):
+    try:
+        current = ws.row_values(1)
+    except Exception:
+        current = []
+    if current[:len(header)] == header:
+        return
+    try:
+        ws.update(range_name="A1", values=[header], value_input_option="USER_ENTERED")
+    except TypeError:
+        # 古いgspread（引数の順番が違う）向けのフォールバック
+        ws.update("A1", [header], value_input_option="USER_ENTERED")
+    print(f"   🧹 シート『{ws.title}』の見出しを最新の並びにそろえました。")
+
 # 💡 会社名を比較するために、余計な文字（株式会社やスペース）を削る魔法の関数
 def clean_company_name(name):
     if not name: return ""
@@ -94,11 +122,21 @@ def clean_company_name(name):
         res = res.replace(w, "")
     return res.lower()
 
-# 💡 1つのサイトを開いて電話番号を探す関数
-#    戻り値: (見つかったか, 電話番号, 取得方法)
-def find_phone_on_site(url, driver=None):
-    html = ""
+# 💡 HTMLから「見える文字」だけを取り出す（script/styleは除去）
+def html_to_text(html):
+    body = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'<[^>]+>', ' ', body)
+    return text
 
+# 💡 1つのサイトを開いて「会社名の一致確認」と「電話番号探索」を行う関数
+#    戻り値は dict。 name_matched=True かつ phone があるときだけ信用してよい。
+def inspect_site(url, org_name, driver=None):
+    result = {
+        "url": url, "fetched": False, "phone": "", "how": "",
+        "name_matched": False, "page_title": "",
+    }
+
+    html = ""
     # --- ① まず requests で軽く取得（速い） ---
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -118,20 +156,35 @@ def find_phone_on_site(url, driver=None):
             html = ""
 
     if not html:
-        return (False, "", "")
+        return result
+    result["fetched"] = True
 
-    # --- tel: リンクを最優先（サイト側が「電話番号です」と宣言しているので確実） ---
+    # --- ページタイトル（社名確認＆記録用） ---
+    mt = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+    result["page_title"] = re.sub(r'\s+', ' ', mt.group(1)).strip() if mt else ""
+
+    # --- 見える文字を取り出す ---
+    text = html_to_text(html)
+
+    # --- 🚨 会社名の一致確認（タイトル優先、なければ本文） ---
+    #     CSVの顧客名（株式会社などを除いた中核）が、ページ側に出てくるかを確認する。
+    clean_org = clean_company_name(org_name)
+    if clean_org:
+        if clean_org in clean_company_name(result["page_title"]) or clean_org in clean_company_name(text):
+            result["name_matched"] = True
+
+    # --- 電話番号の抽出（tel:リンク最優先 → 本文の正規表現） ---
     tel_links = re.findall(r'href=["\']tel:([+\d\-\(\)\s]+)["\']', html, re.IGNORECASE)
     if tel_links:
-        num = re.sub(r'[^\d+]', '', tel_links[0])
-        return (True, num, "tel:リンク")
+        result["phone"] = re.sub(r'[^\d+]', '', tel_links[0])
+        result["how"] = "tel:リンク"
+    else:
+        m = PHONE_PATTERN.search(text)
+        if m:
+            result["phone"] = m.group()
+            result["how"] = "本文テキスト"
 
-    # --- 本文テキストから正規表現で探す（保険） ---
-    m = PHONE_PATTERN.search(html)
-    if m:
-        return (True, m.group(), "本文テキスト")
-
-    return (False, "", "")
+    return result
 
 # ==========================================
 # 🚀 メイン処理
@@ -146,22 +199,13 @@ try:
 
     # --- GBPありシートの準備 ---
     try: ws_found = sh.worksheet(SHEET_FOUND)
-    except:
-        ws_found = sh.add_worksheet(title=SHEET_FOUND, rows="1000", cols="12")
-        ws_found.append_row([
-            "検索した名前", "元の住所", "検索用住所", "【GBP】会社名", "【GBP】業種",
-            "【GBP】住所", "【GBP】電話番号", "【GBP】ウェブサイト", "【GBP】マップURL", "【検索結果】1ページ目URL", "チェック日時"
-        ])
+    except: ws_found = sh.add_worksheet(title=SHEET_FOUND, rows="1000", cols="12")
+    ensure_header(ws_found, HEADER_FOUND)
 
-    # --- GBPなしシートの準備（電話番号の列を追加！） ---
+    # --- GBPなしシートの準備（見出しも毎回そろえる） ---
     try: ws_not_found = sh.worksheet(SHEET_NOT_FOUND)
-    except:
-        ws_not_found = sh.add_worksheet(title=SHEET_NOT_FOUND, rows="1000", cols="10")
-        ws_not_found.append_row([
-            "検索した名前", "元の住所", "検索用住所", "判定結果（理由）",
-            "電話番号印", "発見した電話番号（代表）", "番号が見つかったサイト",
-            "【検索結果】1ページ目URL", "チェック日時"
-        ])
+    except: ws_not_found = sh.add_worksheet(title=SHEET_NOT_FOUND, rows="1000", cols="10")
+    ensure_header(ws_not_found, HEADER_NOT_FOUND)
 
     print("✅ スプレッドシート接続完了！")
 
@@ -209,6 +253,7 @@ try:
             gbp_website = ""
             gbp_map_url = ""
             search_urls = []
+            urls_str = ""
 
             # ==========================================
             # 💡 GBP（ナレッジパネル）の抽出とURL取得
@@ -288,6 +333,7 @@ try:
 
             # ==========================================
             # 💡 スプレッドシートへの書き込み（分岐）
+            #    ※ table_range='A1' を指定して、必ずA列から書き込む（列ずれ防止）
             # ==========================================
             now_str = time.strftime("%Y-%m-%d %H:%M:%S")
             try:
@@ -296,36 +342,53 @@ try:
                     ws_found.append_row([
                         org_name, full_address, clean_address, gbp_name, gbp_category,
                         gbp_address, gbp_phone, gbp_website, gbp_map_url, urls_str, now_str
-                    ], value_input_option='USER_ENTERED')
+                    ], value_input_option='USER_ENTERED', table_range='A1')
                 else:
                     # ==========================================
                     # 💡 GBPなし → 1ページ目のサイトを順番に開いて電話番号を探す
+                    #    🚨 ただし「ページの会社名がCSVの顧客名と一致」したサイトの番号だけ採用する
                     # ==========================================
-                    print(f"❌ {match_reason}。 [GBPなし]→1ページ目のサイトから電話番号を探します。")
+                    print(f"❌ {match_reason}。 [GBPなし]→1ページ目の全サイトから電話番号を探します。")
 
-                    first_phone = ""        # 代表として記録する電話番号（最初に見つかったもの）
-                    sites_with_phone = []   # 電話番号が見つかったサイトのメモ
+                    first_phone = ""        # 代表として記録する電話番号（社名一致の最初の1件）
+                    verified_sites = []     # 社名が一致して番号が取れたサイトの記録
+                    skipped_mismatch = 0    # 番号はあったが社名不一致で除外した件数
 
                     for site_url in search_urls:   # 💡 1ページ目すべてを探索
-                        ok, phone, how = find_phone_on_site(site_url, driver=driver)
-                        if ok:
-                            print(f"  📞 電話番号を発見！ {phone}（{how}） @ {site_url}")
+                        res = inspect_site(site_url, org_name, driver=driver)
+
+                        if res["phone"] and res["name_matched"]:
+                            # ✅ 社名一致 ＆ 番号あり → 信用して採用
+                            print(f"  ✅📞 {res['phone']}（{res['how']} / 社名一致） @ {site_url}")
                             if not first_phone:
-                                first_phone = phone
-                            sites_with_phone.append(f"{phone}（{how}） {site_url}")
+                                first_phone = res["phone"]
+                            verified_sites.append(
+                                f"{res['phone']}（{res['how']}）\n  └ URL: {site_url}\n  └ ページ会社名: {res['page_title']}"
+                            )
+                        elif res["phone"] and not res["name_matched"]:
+                            # ⚠️ 番号はあるが社名が一致しない → 情報不一致防止のため除外
+                            skipped_mismatch += 1
+                            print(f"  ⚠️ 番号あり・但し社名不一致のため除外 @ {site_url}（ページ: {res['page_title']}）")
                         else:
-                            print(f"  ・電話番号なし @ {site_url}")
+                            print(f"  ・番号なし @ {site_url}")
+
                         time.sleep(PHONE_FETCH_WAIT)
 
-                    phone_mark = "📞あり" if first_phone else "電話番号なし"
-                    sites_str = "\n".join(sites_with_phone)
-                    print(f"  → 判定: {phone_mark}（見つかったサイト {len(sites_with_phone)}件）")
+                    if first_phone:
+                        phone_mark = "📞あり（社名一致）"
+                    else:
+                        phone_mark = "電話番号なし"
+                        if skipped_mismatch:
+                            phone_mark += f"（社名不一致で{skipped_mismatch}件除外）"
+
+                    sites_str = "\n".join(verified_sites)
+                    print(f"  → 判定: {phone_mark}（採用サイト {len(verified_sites)}件 / 除外 {skipped_mismatch}件）")
 
                     ws_not_found.append_row([
                         org_name, full_address, clean_address, match_reason,
                         phone_mark, first_phone, sites_str,
                         urls_str, now_str
-                    ], value_input_option='USER_ENTERED')
+                    ], value_input_option='USER_ENTERED', table_range='A1')
             except Exception as e:
                 print(f"❌ スプレッドシートの書き込みに失敗しました: {e}")
 
