@@ -226,6 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $currency     = trim((string) ($_POST['currency'] ?? 'JPY')) ?: 'JPY';
         $billing_url  = trim((string) ($_POST['billing_url'] ?? ''));
         $key_location = trim((string) ($_POST['key_location'] ?? ''));
+        $site         = trim((string) ($_POST['site'] ?? ''));
         $docs_url     = trim((string) ($_POST['docs_url'] ?? ''));
         $owner        = trim((string) ($_POST['owner'] ?? ''));
         $notes        = trim((string) ($_POST['notes'] ?? ''));
@@ -237,11 +238,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($id === null) {
             $stmt = $pdo->prepare(
-                'INSERT INTO apis (group_id, name, provider, status, monthly_cost, currency, billing_url, key_location, docs_url, owner, notes, created_at, updated_at)
-                 VALUES (:gid,:name,:provider,:status,:cost,:cur,:bill,:key,:docs,:owner,:notes,:ca,:ua)'
+                'INSERT INTO apis (group_id, name, provider, site, status, monthly_cost, currency, billing_url, key_location, docs_url, owner, notes, created_at, updated_at)
+                 VALUES (:gid,:name,:provider,:site,:status,:cost,:cur,:bill,:key,:docs,:owner,:notes,:ca,:ua)'
             );
             $stmt->execute([
-                ':gid'=>$gid, ':name'=>$name, ':provider'=>$provider, ':status'=>$status, ':cost'=>$monthly_cost,
+                ':gid'=>$gid, ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':status'=>$status, ':cost'=>$monthly_cost,
                 ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':docs'=>$docs_url,
                 ':owner'=>$owner, ':notes'=>$notes, ':ca'=>now(), ':ua'=>now(),
             ]);
@@ -249,18 +250,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // 現在グループに属する行のみ更新可（横断アクセス防止）
             $stmt = $pdo->prepare(
-                'UPDATE apis SET name=:name, provider=:provider, status=:status, monthly_cost=:cost,
+                'UPDATE apis SET name=:name, provider=:provider, site=:site, status=:status, monthly_cost=:cost,
                      currency=:cur, billing_url=:bill, key_location=:key, docs_url=:docs,
                      owner=:owner, notes=:notes, updated_at=:ua
                  WHERE id=:id AND group_id=:gid'
             );
             $stmt->execute([
-                ':name'=>$name, ':provider'=>$provider, ':status'=>$status, ':cost'=>$monthly_cost,
+                ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':status'=>$status, ':cost'=>$monthly_cost,
                 ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':docs'=>$docs_url,
                 ':owner'=>$owner, ':notes'=>$notes, ':ua'=>now(), ':id'=>$id, ':gid'=>$gid,
             ]);
             flash('ok', 'APIを更新しました。');
         }
+        redirect_self();
+    }
+
+    if ($action === 'delete_legacy') {
+        require_role_at_least($gid, 'admin');
+        $n = delete_siteless_apis($gid);
+        flash('ok', "旧形式（サイト未設定）のエントリを {$n} 件削除しました。");
         redirect_self();
     }
 
@@ -311,11 +319,12 @@ $pdo = db();
 $q            = trim((string) ($_GET['q'] ?? ''));
 $filterProv   = trim((string) ($_GET['provider'] ?? ''));
 $filterStatus = trim((string) ($_GET['status'] ?? ''));
+$filterSite   = trim((string) ($_GET['site'] ?? ''));
 
 $where  = ['a.group_id = :gid'];
 $params = [':gid' => $gid];
 if ($q !== '') {
-    $where[] = '(a.name LIKE :q OR a.notes LIKE :q OR a.owner LIKE :q)';
+    $where[] = '(a.name LIKE :q OR a.notes LIKE :q OR a.owner LIKE :q OR a.site LIKE :q OR a.key_location LIKE :q)';
     $params[':q'] = '%' . $q . '%';
 }
 if ($filterProv !== '') {
@@ -326,17 +335,39 @@ if ($filterStatus !== '' && array_key_exists($filterStatus, STATUSES)) {
     $where[] = 'a.status = :st';
     $params[':st'] = $filterStatus;
 }
+if ($filterSite !== '') {
+    $where[] = 'a.site = :site';
+    $params[':site'] = $filterSite;
+}
 $whereSql = 'WHERE ' . implode(' AND ', $where);
 
 $sql = "SELECT a.*,
-               (SELECT COUNT(DISTINCT u.repo) FROM usages u WHERE u.api_id = a.id AND u.repo <> '') AS repo_count,
-               (SELECT COUNT(*)               FROM usages u WHERE u.api_id = a.id)                  AS usage_count
+               (SELECT COUNT(*) FROM usages u WHERE u.api_id = a.id) AS usage_count
         FROM apis a
         $whereSql
-        ORDER BY (a.monthly_cost IS NULL) ASC, a.monthly_cost DESC, a.name ASC";
+        ORDER BY a.name ASC, (a.monthly_cost IS NULL) ASC, a.monthly_cost DESC, a.site ASC";
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $apis = $stmt->fetchAll();
+
+// API名（プロバイダ）ごとにグループ化し、コスト合計でグループを並べ替え
+$groups = [];
+foreach ($apis as $row) {
+    $groups[$row['name']][] = $row;
+}
+$groupTotal = [];
+foreach ($groups as $gname => $rows) {
+    $t = 0.0;
+    foreach ($rows as $r) { $t += (float) ($r['monthly_cost'] ?? 0); }
+    $groupTotal[$gname] = $t;
+}
+uksort($groups, static fn($a, $b) => ($groupTotal[$b] <=> $groupTotal[$a]) ?: strcmp($a, $b));
+
+// サイト一覧（フィルタ用）/ 旧形式(サイト未設定)件数
+$sites = $pdo->prepare("SELECT DISTINCT site FROM apis WHERE group_id = :gid AND site <> '' ORDER BY site");
+$sites->execute([':gid' => $gid]);
+$sites = $sites->fetchAll(PDO::FETCH_COLUMN);
+$legacyCount = (int) $pdo->query("SELECT COUNT(*) FROM apis WHERE group_id = " . (int) $gid . " AND IFNULL(site,'') = ''")->fetchColumn();
 
 // 使用箇所（現在グループ分のみ）
 $usagesByApi = [];
@@ -421,6 +452,8 @@ function render_styles(): void { ?>
     th { background:#f0f2f5; font-size:12px; color:var(--muted); font-weight:600; }
     td.cost { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; }
     tr.api-row:hover { background:#fafbfc; }
+    tr.group-head td { background:#eef2ff; color:#1e293b; border-top:2px solid #c7d2fe; }
+    tr.group-head strong { font-size:15px; }
     .muted { color:var(--muted); }
     .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
     .pill.active{background:#e7f6ec;color:#1a7f43;} .pill.unused{background:#eef1f4;color:#6b7280;}
@@ -758,9 +791,26 @@ function render_scan_page(array $user, array $group, int $gid): void
         <div class="stat"><div class="label">金額未設定</div><div class="value"><?= $unsetCount ?> <small>件（合計に含まず）</small></div></div>
     </div>
 
+    <?php if ($legacyCount > 0 && can_manage()): ?>
+        <div class="flash" style="background:#fff4e0;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span>旧形式（サイト未設定）のエントリが <strong><?= $legacyCount ?></strong> 件あります。<strong>まず再スキャンしてサイト別の新エントリを作ってから</strong>、古いものを削除して整理してください。<br><span class="hint">※削除すると、その旧エントリに手入力したコスト等も消えます。必要な値は新エントリへ移してから削除を。</span></span>
+            <form method="post" style="margin:0" onsubmit="return confirm('サイト未設定のエントリ <?= $legacyCount ?> 件を削除します（手入力した内容も消えます）。よろしいですか？')">
+                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                <input type="hidden" name="action" value="delete_legacy">
+                <button class="danger" type="submit">古いエントリを削除</button>
+            </form>
+        </div>
+    <?php endif; ?>
+
     <!-- 絞り込み / 検索 -->
     <form class="toolbar" method="get">
-        <input type="search" name="q" value="<?= h($q) ?>" placeholder="名前 / メモ / 担当者で検索">
+        <input type="search" name="q" value="<?= h($q) ?>" placeholder="API / サイト / キー / メモ で検索">
+        <select name="site">
+            <option value="">サイト（すべて）</option>
+            <?php foreach ($sites as $s): ?>
+                <option value="<?= h($s) ?>" <?= $s === $filterSite ? 'selected' : '' ?>><?= h($s) ?></option>
+            <?php endforeach; ?>
+        </select>
         <select name="provider">
             <option value="">provider（すべて）</option>
             <?php foreach ($providers as $p): ?>
@@ -781,25 +831,38 @@ function render_scan_page(array $user, array $group, int $gid): void
         <?php endif; ?>
     </form>
 
-    <!-- コスト軸ビュー -->
+    <!-- キー × サイト × コスト ビュー（API別グループ） -->
     <?php if (!$apis): ?>
-        <div class="empty">該当するAPIがありません。<?= $editable ? '「＋ API を追加」から登録してください。' : '' ?></div>
+        <div class="empty">該当するAPIがありません。<?= $editable ? '「＋ API を追加」から登録するか、「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
+    <?php $colspan = $editable ? 7 : 6; ?>
     <table>
         <thead>
             <tr>
-                <th style="width:32px"></th>
-                <th>API名</th>
-                <th class="hide-sm">provider</th>
+                <th style="width:28px"></th>
+                <th>サイト</th>
+                <th>キー（鍵のありか）</th>
                 <th>月額</th>
-                <th class="hide-sm">使用リポジトリ</th>
                 <th>status</th>
                 <th class="hide-sm note-cell">メモ / 担当</th>
-                <?php if ($editable): ?><th style="width:120px"></th><?php endif; ?>
+                <?php if ($editable): ?><th style="width:96px"></th><?php endif; ?>
             </tr>
         </thead>
         <tbody>
-        <?php foreach ($apis as $a):
+        <?php foreach ($groups as $gname => $rows):
+            $first = $rows[0];
+            $gcur = $first['currency'] ?: 'JPY';
+            $gsum = $groupTotal[$gname];
+        ?>
+            <tr class="group-head">
+                <td colspan="<?= $colspan ?>">
+                    🔷 <strong><?= h($gname) ?></strong>
+                    <?php if ($first['provider']): ?><span class="muted">（<?= h($first['provider']) ?>）</span><?php endif; ?>
+                    <?php if ($first['docs_url']): ?><a href="<?= h($first['docs_url']) ?>" target="_blank" rel="noopener" class="muted" title="ドキュメント">📄</a><?php endif; ?>
+                    <span class="muted" style="font-weight:400">　— <?= count($rows) ?> 件（キー×サイト）／ 月額計 <?= h($gcur) ?> <?= number_format($gsum, (fmod($gsum,1.0)===0.0)?0:2) ?></span>
+                </td>
+            </tr>
+        <?php foreach ($rows as $a):
             $aid = (int) $a['id'];
             $uses = $usagesByApi[$aid] ?? [];
         ?>
@@ -810,16 +873,16 @@ function render_scan_page(array $user, array $group, int $gid): void
                     <?php endif; ?>
                 </td>
                 <td>
-                    <strong><?= h($a['name']) ?></strong>
-                    <?php if ($a['docs_url']): ?><a href="<?= h($a['docs_url']) ?>" target="_blank" rel="noopener" class="muted" title="ドキュメント">📄</a><?php endif; ?>
-                    <?php if ($a['key_location']): ?><div class="hint">🔑 <?= h($a['key_location']) ?></div><?php endif; ?>
+                    <?php if ($a['site'] !== ''): ?><strong>🌐 <?= h($a['site']) ?></strong><?php else: ?><span class="muted">（サイト未設定）</span><?php endif; ?>
+                    <div class="hint"><?= (int) $a['usage_count'] ?> 箇所</div>
                 </td>
-                <td class="hide-sm"><?= h($a['provider']) ?: '<span class="muted">—</span>' ?></td>
+                <td>
+                    <?php if ($a['key_location'] !== ''): ?>🔑 <?= h($a['key_location']) ?><?php else: ?><span class="muted">—</span><?php endif; ?>
+                </td>
                 <td class="cost">
                     <?= fmt_money($a['monthly_cost'] === null ? null : (float) $a['monthly_cost'], $a['currency']) ?>
                     <?php if ($a['billing_url']): ?><a href="<?= h($a['billing_url']) ?>" target="_blank" rel="noopener" class="muted" title="請求ページ">💳</a><?php endif; ?>
                 </td>
-                <td class="hide-sm"><?= (int) $a['repo_count'] ?> <span class="muted">リポジトリ / <?= (int) $a['usage_count'] ?> 箇所</span></td>
                 <td><span class="pill <?= h($a['status']) ?>"><?= h(STATUSES[$a['status']] ?? $a['status']) ?></span></td>
                 <td class="hide-sm note-cell">
                     <?php if ($a['owner']): ?><div class="muted">👤 <?= h($a['owner']) ?></div><?php endif; ?>
@@ -829,7 +892,7 @@ function render_scan_page(array $user, array $group, int $gid): void
                 <td>
                     <button class="link" type="button"
                         onclick='openEdit(<?= json_encode($a, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                    <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($a['name']) ?>」を削除しますか？')">
+                    <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($a['name']) ?>（<?= h($a['site'] ?: 'サイト未設定') ?>）」を削除しますか？')">
                         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                         <input type="hidden" name="action" value="delete_api">
                         <input type="hidden" name="id" value="<?= $aid ?>">
@@ -839,9 +902,9 @@ function render_scan_page(array $user, array $group, int $gid): void
                 <?php endif; ?>
             </tr>
 
-            <!-- ドリルダウン：使用箇所 -->
+            <!-- ドリルダウン：使用箇所（サブ情報） -->
             <tr class="usages" id="us<?= $aid ?>" style="display:none">
-                <td colspan="8">
+                <td colspan="<?= $colspan ?>">
                     <table>
                         <thead><tr><th>repo</th><th>file</th><th>line</th><th>snippet</th><?php if ($editable): ?><th></th><?php endif; ?></tr></thead>
                         <tbody>
@@ -879,7 +942,8 @@ function render_scan_page(array $user, array $group, int $gid): void
                     <?php endif; ?>
                 </td>
             </tr>
-        <?php endforeach; ?>
+        <?php endforeach; /* rows */ ?>
+        <?php endforeach; /* groups */ ?>
         </tbody>
     </table>
     <?php endif; ?>
@@ -903,6 +967,7 @@ function render_scan_page(array $user, array $group, int $gid): void
             <div class="grid">
                 <div class="field"><label>API名 <span style="color:#b42318">*</span></label><input name="name" id="f_name" required placeholder="例: OpenAI API"></div>
                 <div class="field"><label>provider</label><input name="provider" id="f_provider" placeholder="例: OpenAI / Stripe / Google"></div>
+                <div class="field"><label>サイト (site)</label><input name="site" id="f_site" placeholder="例: s-benri / drive-py"><div class="hint">どのサイト/プロジェクトで使うキーか。空欄も可。</div></div>
                 <div class="field"><label>月額（空欄＝未設定）</label><input name="monthly_cost" id="f_cost" type="number" step="0.01" min="0" placeholder="例: 12000"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label>status</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
@@ -924,7 +989,7 @@ function render_scan_page(array $user, array $group, int $gid): void
     function openCreate() {
         document.getElementById('modalTitle').textContent = 'API を追加';
         document.getElementById('f_id').value = '';
-        for (const f of ['name','provider','cost','owner','key','billing','docs','notes']) {
+        for (const f of ['name','provider','site','cost','owner','key','billing','docs','notes']) {
             const el = document.getElementById('f_' + f); if (el) el.value = '';
         }
         document.getElementById('f_currency').value = 'JPY';
@@ -936,6 +1001,7 @@ function render_scan_page(array $user, array $group, int $gid): void
         document.getElementById('f_id').value      = a.id ?? '';
         document.getElementById('f_name').value     = a.name ?? '';
         document.getElementById('f_provider').value = a.provider ?? '';
+        document.getElementById('f_site').value     = a.site ?? '';
         document.getElementById('f_cost').value     = (a.monthly_cost === null || a.monthly_cost === undefined) ? '' : a.monthly_cost;
         document.getElementById('f_currency').value = a.currency ?? 'JPY';
         document.getElementById('f_status').value   = a.status ?? 'unknown';
