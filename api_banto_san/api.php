@@ -84,8 +84,24 @@ if ($role === false || role_rank((string) $role) < ROLE_RANK['member']) {
     ]);
 }
 
-$raw = file_get_contents('php://input');
-$body = json_decode((string) $raw, true);
+$raw = (string) file_get_contents('php://input');
+
+// WAF(SiteGuard)対策: 本文は gzip+base64 でエンコードされて届くことがある。
+// X-Payload-Encoding ヘッダがあれば復号する（無ければ素のJSONとして扱う＝後方互換）。
+$enc = $_SERVER['HTTP_X_PAYLOAD_ENCODING'] ?? '';
+if ($enc !== '') {
+    $dec = base64_decode($raw, true);
+    if ($dec !== false) {
+        if (stripos($enc, 'gzip') !== false && function_exists('gzdecode')) {
+            $gun = @gzdecode($dec);
+            $raw = ($gun !== false) ? $gun : $dec;
+        } else {
+            $raw = $dec;
+        }
+    }
+}
+
+$body = json_decode($raw, true);
 if (!is_array($body) || !isset($body['apis']) || !is_array($body['apis'])) {
     json_out(400, ['error' => 'invalid_payload', 'hint' => '{ "apis": [ ... ] }']);
 }

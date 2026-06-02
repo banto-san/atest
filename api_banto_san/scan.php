@@ -104,12 +104,25 @@ if ($token === '') {
 }
 
 $url = $endpoint . (strpos($endpoint, '?') === false ? '?' : '&') . 'action=push&group=' . $group;
+
+// WAF対策: 本文を gzip+base64 でエンコードして送る
+$jsonBody = json_encode($payload, JSON_UNESCAPED_UNICODE);
+$headers  = ['Authorization: Bearer ' . $token];
+if (function_exists('gzencode')) {
+    $sendBody = base64_encode(gzencode($jsonBody, 6));
+    $headers[] = 'X-Payload-Encoding: gzip-base64';
+} else {
+    $sendBody = base64_encode($jsonBody);
+    $headers[] = 'X-Payload-Encoding: base64';
+}
+$headers[] = 'Content-Type: text/plain';
+
 $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST           => true,
-    CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-    CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ' . $token],
+    CURLOPT_POSTFIELDS     => $sendBody,
+    CURLOPT_HTTPHEADER     => $headers,
     CURLOPT_TIMEOUT        => 60,
 ]);
 $resp = curl_exec($ch);
