@@ -76,6 +76,24 @@ SEARCH_RESULT_TIMEOUT = 8  # Google検索結果の表示を待つ最大秒（出
 PHONE_MAX_WORKERS = 8      # 同時に開くサイト数（多いほど速いが負荷も上がる）
 PHONE_FETCH_TIMEOUT = 7    # requestsで1サイトを読み込む最大秒数
 USE_SELENIUM_FALLBACK = True   # requestsで取れなかったサイトだけSeleniumで開き直すか
+PHONE_CONTEXT_WINDOW = 60  # 電話番号が社名/住所の「近く」と判定する前後の文字数
+
+# 💡 媒体・ポータル・名簿系ドメイン（ここの電話番号は運営会社の番号なので採用しない）
+#    ※ 新しい媒体に出くわしたら、ここに1行足すだけで除外できます。
+AGGREGATOR_DOMAINS = [
+    # --- 求人・転職ポータル ---
+    "jinzaibank.com", "job-medley.com", "kaigojob.com", "indeed.com",
+    "townwork.net", "mynavi.jp", "rikunabi.com", "en-japan.com", "doda.jp",
+    "baitoru.com", "wantedly.com", "hellowork", "guppy.jp", "e-aidem.com",
+    "kyujin", "kyuujin", "job", "recruit",
+    # --- 法人情報・登記・営業リスト・企業DB ---
+    "houjin.jp", "houjin-bangou.nta.go.jp", "toukibo", "baseconnect.in",
+    "salesnow", "alarmbox", "g-search", "choseikou", "companytanq",
+    "navit-j.com", "uraga-now", "ipros.jp", "nikkei.com", "buffett-code",
+    # --- 地図・口コミ・電話帳ポータル ---
+    "ekiten.jp", "itp.ne.jp", "navitime", "mapfan", "goo.ne.jp",
+    "loco.yahoo.co.jp", "yahoo.co.jp", "google.com",
+]
 
 # ==========================================
 # 💡 日本の電話番号パターン
@@ -143,6 +161,40 @@ def page_has_address(text, clean_address):
     norm_addr = re.sub(r'\s', '', clean_address)
     return bool(norm_addr) and norm_addr in norm_text
 
+# 💡 会社名から「株式会社」などの法人格を取り除いた中核だけを返す（位置照合に使う）
+def core_name(name):
+    if not name:
+        return ""
+    for w in ["株式会社", "有限会社", "合同会社", "一般社団法人", "一般財団法人",
+              "公益社団法人", "公益財団法人", "財団法人", "社団法人",
+              "医療法人", "社会福祉法人", "特定非営利活動法人", "NPO法人"]:
+        name = name.replace(w, "")
+    return re.sub(r'\s', '', name).strip()
+
+# 💡 URLが媒体・ポータル・名簿系ドメインかどうか
+def is_aggregator_domain(url):
+    domain = urllib.parse.urlparse(url).netloc.lower()
+    return any(ng in domain for ng in AGGREGATOR_DOMAINS)
+
+# 💡 🚨 電話番号が「社名 or 住所のすぐ近く」にあるものだけを返す（媒体運営の番号を弾く本命）
+#    会社の自社サイトは「住所＋電話」が固まっているが、媒体のフリーダイヤルは
+#    その会社の住所ブロックから離れたヘッダー等にあるため、近接条件で除外できる。
+def find_relevant_phone(text, org_name, clean_address, window=PHONE_CONTEXT_WINDOW):
+    name_tok = core_name(org_name)
+    addr_tok = re.sub(r'\s', '', clean_address)
+
+    for m in PHONE_PATTERN.finditer(text):
+        phone = m.group()
+        s = max(0, m.start() - window)
+        e = min(len(text), m.end() + window)
+        ctx = re.sub(r'\s', '', text[s:e])   # 前後の文脈（空白を詰めて照合）
+        near_name = bool(name_tok) and name_tok in ctx
+        near_addr = bool(addr_tok) and addr_tok in ctx
+        if near_name or near_addr:
+            tag = "社名の近く" if near_name else "住所の近く"
+            return (phone, f"本文テキスト / {tag}")
+    return ("", "")
+
 # 💡 サイトのHTMLを requests で取得するだけの関数（並列実行用に軽くしてある）
 def fetch_html(url, session):
     try:
@@ -158,6 +210,7 @@ def analyze_html(html, url, org_name, clean_address):
     result = {
         "url": url, "fetched": bool(html), "phone": "", "how": "",
         "name_matched": False, "address_matched": False, "page_title": "",
+        "is_aggregator": is_aggregator_domain(url),
     }
     if not html:
         return result
@@ -179,16 +232,14 @@ def analyze_html(html, url, org_name, clean_address):
     # --- 🚨 住所の一致確認（社名だけだと同名他社の恐れがあるので住所でも裏取り） ---
     result["address_matched"] = page_has_address(text, clean_address)
 
-    # --- 電話番号の抽出（tel:リンク最優先 → 本文の正規表現） ---
-    tel_links = re.findall(r'href=["\']tel:([+\d\-\(\)\s]+)["\']', html, re.IGNORECASE)
-    if tel_links:
-        result["phone"] = re.sub(r'[^\d+]', '', tel_links[0])
-        result["how"] = "tel:リンク"
-    else:
-        m = PHONE_PATTERN.search(text)
-        if m:
-            result["phone"] = m.group()
-            result["how"] = "本文テキスト"
+    # --- 🚨 電話番号の抽出 ---
+    #     ① 媒体・ポータル系ドメインは運営会社の番号なので、そもそも取らない
+    if result["is_aggregator"]:
+        return result
+    #     ② 「社名 or 住所のすぐ近く」にある番号だけを採用（媒体のフリーダイヤル等を弾く）
+    phone, how = find_relevant_phone(text, org_name, clean_address)
+    result["phone"] = phone
+    result["how"] = how
 
     return result
 
@@ -397,13 +448,16 @@ try:
                         res = analyze_html(html_map.get(site_url, ""), site_url, org_name, clean_address)
 
                         if res["phone"] and res["name_matched"] and res["address_matched"]:
-                            # ✅ 社名＋住所が一致 ＆ 番号あり → 信用して採用
-                            print(f"  ✅📞 {res['phone']}（{res['how']} / 社名・住所 一致） @ {site_url}")
+                            # ✅ 社名＋住所が一致 ＆ 社名/住所の近くにある番号 → 信用して採用
+                            print(f"  ✅📞 {res['phone']}（{res['how']}） @ {site_url}")
                             if not first_phone:
                                 first_phone = res["phone"]
                             verified_sites.append(
-                                f"{res['phone']}（{res['how']} / 社名・住所一致）\n  └ URL: {site_url}\n  └ ページ会社名: {res['page_title']}"
+                                f"{res['phone']}（{res['how']}）\n  └ URL: {site_url}\n  └ ページ会社名: {res['page_title']}"
                             )
+                        elif res["is_aggregator"]:
+                            # 🚫 媒体・ポータル・名簿系 → 運営会社の番号なので最初から対象外
+                            print(f"  🚫 媒体/ポータルのため番号取得をスキップ @ {site_url}")
                         elif res["phone"]:
                             # ⚠️ 番号はあるが社名or住所が一致しない → 情報不一致防止のため除外
                             skipped_mismatch += 1
@@ -412,7 +466,7 @@ try:
                             if not res["address_matched"]: ng.append("住所")
                             print(f"  ⚠️ 番号あり・但し{'/'.join(ng)}不一致のため除外 @ {site_url}（ページ: {res['page_title']}）")
                         else:
-                            print(f"  ・番号なし @ {site_url}")
+                            print(f"  ・該当番号なし（社名/住所の近くに番号が無い） @ {site_url}")
 
                     if first_phone:
                         phone_mark = "📞あり（社名・住所一致）"
