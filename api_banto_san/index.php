@@ -275,6 +275,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(app_url());   // 手動順（既定）で反映
     }
 
+    if ($action === 'reorder_set') {
+        require_role_at_least($gid, 'member');
+        $names = $_POST['names'] ?? [];
+        if (is_array($names)) {
+            $i = 1;
+            foreach ($names as $nm) {
+                $nm = (string) $nm;
+                if ($nm !== '') { set_group_position($gid, $nm, $i++); }
+            }
+        }
+        redirect(app_url());
+    }
+
     if ($action === 'delete_legacy') {
         require_role_at_least($gid, 'admin');
         $n = delete_siteless_apis($gid);
@@ -481,6 +494,9 @@ function render_styles(): void { ?>
     tr.group-head:hover td { background:#e0e7ff; }
     tr.group-head strong { font-size:15px; }
     .caret { display:inline-block; width:1em; color:#475569; }
+    .drag-handle { cursor:grab; color:#94a3b8; margin-right:4px; user-select:none; }
+    tr.group-head.dragging td { opacity:.4; }
+    tr.group-head[draggable="true"] { cursor:grab; }
     td.group-cost { font-size:16px; font-weight:700; color:#0f172a; white-space:nowrap; }
     .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--line); border-radius:12px; }
     .table-wrap table { border:none; border-radius:0; min-width:600px; }
@@ -915,8 +931,9 @@ function render_scan_page(array $user, array $group, int $gid): void
                 : '—';
             $restcol = $colspan - 4;
         ?>
-            <tr class="group-head" onclick="toggleGroup(<?= $gi ?>)">
-                <td><span id="gtg<?= $gi ?>" class="caret">▶</span></td>
+            <tr class="group-head" data-name="<?= h($gname) ?>" onclick="toggleGroup(<?= $gi ?>)"
+                <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event)" ondrop="gDrop(event,this)"' : '' ?>>
+                <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え">⠿</span><?php endif; ?><span id="gtg<?= $gi ?>" class="caret">▶</span></td>
                 <td colspan="2">
                     🔷 <strong><?= h($gname) ?></strong>
                     <?php if ($first['provider']): ?><span class="muted">（<?= h($first['provider']) ?>）</span><?php endif; ?>
@@ -1097,6 +1114,28 @@ function render_scan_page(array $user, array $group, int $gid): void
 </script>
 <?php endif; ?>
 <script>
+    // ---- ドラッグ＆ドロップ並べ替え（PC） ----
+    const ABT_CSRF = '<?= h($csrf) ?>';
+    let abtDragRow = null;
+    function gDragStart(e, el) { abtDragRow = el; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); }
+    function gDragEnd(el) { el.classList.remove('dragging'); }
+    function gDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+    function gDrop(e, el) {
+        e.preventDefault();
+        if (!abtDragRow || abtDragRow === el) return;
+        const tbody = el.parentNode;
+        const rect = el.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height / 2;
+        tbody.insertBefore(abtDragRow, after ? el.nextSibling : el);
+        const names = Array.from(tbody.querySelectorAll('tr.group-head')).map(r => r.getAttribute('data-name'));
+        const f = document.createElement('form');
+        f.method = 'post'; f.action = 'index.php';
+        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+        add('csrf', ABT_CSRF); add('action', 'reorder_set');
+        names.forEach(n => add('names[]', n));
+        document.body.appendChild(f); f.submit();
+    }
+
     function toggleGroup(gi) {
         const caret = document.getElementById('gtg' + gi);
         const open = caret.textContent === '▶';
