@@ -140,7 +140,7 @@ if ($route === 'scan') {
                 $path = trim((string) ($_POST['path'] ?? ''));
                 $label = trim((string) ($_POST['label'] ?? '')) ?: basename(rtrim($path, '/\\'));
                 if ($path === '' || realpath($path) === false || !is_dir((string) realpath($path))) {
-                    flash('err', 'ディレクトリが見つかりません: ' . $path);
+                    flash('err', 'ディレクトリが見つかりません: ' . $path . "\n" . path_diagnostics($path));
                 } else {
                     add_scan_target($gid, $label, $path);
                     flash('ok', 'スキャン対象を保存しました。次回からワンクリックでスキャンできます。');
@@ -454,7 +454,7 @@ function render_login_page(): void
 </head><body>
 <header class="app"><h1>🛡️ <?= h(APP_NAME) ?></h1><span class="tag">API棚卸しダッシュボード</span></header>
 <div class="wrap">
-    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div><?php endif; ?>
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
     <div class="login-box">
         <h2 style="margin-top:0">ログイン</h2>
         <p class="muted">Googleアカウントでログインしてください。<br>パスワードは保持しません。</p>
@@ -505,7 +505,7 @@ function render_tokens_page(array $user): void
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
 </header>
 <div class="wrap" style="max-width:760px">
-    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div><?php endif; ?>
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
 
     <?php if ($newToken): ?>
         <div class="stat" style="background:#fffbe6;border-color:#facc15;width:100%">
@@ -586,7 +586,7 @@ function render_scan_page(array $user, array $group, int $gid): void
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
 </header>
 <div class="wrap" style="max-width:780px">
-    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div><?php endif; ?>
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
 
     <p class="hint" style="margin-top:0">ソースを走査して外部APIの使用箇所を自動検出し、<strong><?= h($group['name']) ?></strong> のカタログに反映します。
     手動入力したコスト・メモ・status は<strong>上書きされません</strong>。キー本体らしき値は保存前に伏字化します。
@@ -723,7 +723,7 @@ function render_scan_page(array $user, array $group, int $gid): void
 <div class="wrap">
 
     <?php if ($flashMsg): ?>
-        <div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div>
+        <div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div>
     <?php endif; ?>
 
     <?php if (!$editable): ?>

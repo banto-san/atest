@@ -806,7 +806,7 @@ function run_scan_on_dir(int $gid, string $path, string $repo): array
 {
     $real = $path !== '' ? realpath($path) : false;
     if ($real === false || !is_dir($real)) {
-        throw new RuntimeException('ディレクトリが見つかりません: ' . $path);
+        throw new RuntimeException('ディレクトリが見つかりません: ' . $path . "\n" . path_diagnostics($path));
     }
     $allowedRoot = config('SCAN_ALLOWED_ROOT');
     if ($allowedRoot) {
@@ -818,6 +818,40 @@ function run_scan_on_dir(int $gid, string $path, string $repo): array
     $providers = load_providers(__DIR__ . '/scanner/providers.json');
     $found = scan_directory($real, $providers, ['repo' => ($repo !== '' ? $repo : basename($real))]);
     return merge_scan_results($gid, $found);
+}
+
+/**
+ * パスが解決できない時に、原因特定の手がかりを文字列で返す（admin向け診断）。
+ * 親フォルダの実際のサブフォルダ一覧や open_basedir 設定を示す。
+ */
+function path_diagnostics(string $path): string
+{
+    $bits = [];
+    $ob = (string) ini_get('open_basedir');
+    if ($ob !== '') {
+        $bits[] = '⚠ open_basedir 制限あり（' . $ob . '）。この範囲外のフォルダはPHPから読めません。';
+    }
+    if (@file_exists($path)) {
+        if (@is_dir($path)) {
+            $bits[] = 'フォルダは存在しますが解決できません（' . (@is_readable($path) ? '読取可だがrealpath失敗' : '読取権限なし') . '）。';
+        } else {
+            $bits[] = 'これはフォルダではなくファイルです。フォルダのパスを指定してください。';
+        }
+    } else {
+        $bits[] = '指定パスは存在しません。';
+        $parent = dirname($path);
+        if (@is_dir($parent)) {
+            $entries = @scandir($parent);
+            $dirs = is_array($entries)
+                ? array_values(array_filter($entries, static fn($e) => $e !== '.' && $e !== '..' && @is_dir($parent . '/' . $e)))
+                : [];
+            $bits[] = '親フォルダ「' . $parent . '」内の実際のフォルダ: ' . (count($dirs) ? implode(' / ', array_slice($dirs, 0, 40)) : '(フォルダなし)');
+        } else {
+            $bits[] = '親フォルダ「' . $parent . '」も見えません（綴り違い or open_basedir 制限の可能性）。';
+        }
+    }
+    $bits[] = '※ このアプリ自身の実パス: ' . (realpath(__DIR__) ?: __DIR__);
+    return implode("\n", $bits);
 }
 
 /* ------------------------------------------------------------------ *
