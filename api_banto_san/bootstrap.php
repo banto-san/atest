@@ -238,6 +238,7 @@ function db(): PDO
             group_id      INTEGER REFERENCES groups(id) ON DELETE CASCADE,
             name          TEXT    NOT NULL,
             provider      TEXT    NOT NULL DEFAULT '',
+            site          TEXT    NOT NULL DEFAULT '',
             status        TEXT    NOT NULL DEFAULT 'unknown',
             monthly_cost  REAL,
             currency      TEXT    NOT NULL DEFAULT 'JPY',
@@ -297,6 +298,15 @@ function db(): PDO
     }
     if (!$hasGroup) {
         $pdo->exec('ALTER TABLE apis ADD COLUMN group_id INTEGER REFERENCES groups(id)');
+    }
+
+    // 「キー × サイト × コスト」対応: apis.site を後付け。
+    $hasSite = false;
+    foreach ($pdo->query('PRAGMA table_info(apis)') as $c) {
+        if ($c['name'] === 'site') { $hasSite = true; break; }
+    }
+    if (!$hasSite) {
+        $pdo->exec("ALTER TABLE apis ADD COLUMN site TEXT NOT NULL DEFAULT ''");
     }
 
     return $pdo;
@@ -425,14 +435,14 @@ function seed_sample_apis(int $gid): void
             [['web-app', 'public/map.js', 7, 'key=GOOGLE_MAPS_API_KEY']]],
     ];
     $insApi = $pdo->prepare(
-        'INSERT INTO apis (group_id, name, provider, status, monthly_cost, currency, billing_url, key_location, docs_url, owner, notes, detected_by, last_scanned, created_at, updated_at)
-         VALUES (:gid,:name,:provider,:status,:cost,:cur,:bill,:key,:docs,:owner,:notes,:det,:scan,:ca,:ua)'
+        'INSERT INTO apis (group_id, name, provider, site, status, monthly_cost, currency, billing_url, key_location, docs_url, owner, notes, detected_by, last_scanned, created_at, updated_at)
+         VALUES (:gid,:name,:provider,:site,:status,:cost,:cur,:bill,:key,:docs,:owner,:notes,:det,:scan,:ca,:ua)'
     );
     $insUse = $pdo->prepare('INSERT INTO usages (api_id, repo, file, line, snippet) VALUES (:aid,:repo,:file,:line,:snip)');
     foreach ($samples as $s) {
         [$name,$provider,$status,$cost,$cur,$bill,$key,$docs,$owner,$notes,$usages] = $s;
         $insApi->execute([
-            ':gid'=>$gid, ':name'=>$name, ':provider'=>$provider, ':status'=>$status, ':cost'=>$cost,
+            ':gid'=>$gid, ':name'=>$name, ':provider'=>$provider, ':site'=>'sample', ':status'=>$status, ':cost'=>$cost,
             ':cur'=>$cur, ':bill'=>$bill, ':key'=>$key, ':docs'=>$docs, ':owner'=>$owner,
             ':notes'=>$notes, ':det'=>'sample', ':scan'=>$now, ':ca'=>$now, ':ua'=>$now,
         ]);
@@ -741,15 +751,19 @@ function merge_scan_results(int $gid, array $apis): array
     $created = $updated = $usageCount = 0;
     $nowTs = now();
 
-    $findStmt = $pdo->prepare('SELECT * FROM apis WHERE group_id = :g AND LOWER(name) = LOWER(:n) LIMIT 1');
+    // 「キー × サイト × コスト」: (name, key_location, site) 単位で1エントリ
+    $findStmt = $pdo->prepare(
+        "SELECT * FROM apis
+         WHERE group_id = :g AND LOWER(name) = LOWER(:n)
+           AND IFNULL(key_location,'') = :k AND IFNULL(site,'') = :s LIMIT 1"
+    );
     $insStmt  = $pdo->prepare(
-        'INSERT INTO apis (group_id, name, provider, status, currency, key_location, detected_by, last_scanned, created_at, updated_at)
-         VALUES (:g,:name,:provider,\'unknown\',\'JPY\',:key,:det,:scan,:ca,:ua)'
+        'INSERT INTO apis (group_id, name, provider, site, status, currency, key_location, detected_by, last_scanned, created_at, updated_at)
+         VALUES (:g,:name,:provider,:site,\'unknown\',\'JPY\',:key,:det,:scan,:ca,:ua)'
     );
     $updStmt  = $pdo->prepare(
         'UPDATE apis SET detected_by = :det, last_scanned = :scan, updated_at = :ua,
-             provider = CASE WHEN provider = \'\' THEN :provider ELSE provider END,
-             key_location = CASE WHEN key_location = \'\' THEN :key ELSE key_location END
+             provider = CASE WHEN provider = \'\' THEN :provider ELSE provider END
          WHERE id = :id'
     );
     $delUse = $pdo->prepare('DELETE FROM usages WHERE api_id = :id');
@@ -767,15 +781,23 @@ function merge_scan_results(int $gid, array $apis): array
             $detected = $a['detected_by'] ?? [];
             $detStr   = is_array($detected) ? implode(', ', array_slice(array_unique($detected), 0, 20)) : (string) $detected;
 
-            $findStmt->execute([':g' => $gid, ':n' => $name]);
+            // サイト = usages の repo（1スキャン内で一定）。明示指定があれば優先。
+            $site = trim((string) ($a['site'] ?? ''));
+            if ($site === '') {
+                foreach (($a['usages'] ?? []) as $u) {
+                    if (!empty($u['repo'])) { $site = (string) $u['repo']; break; }
+                }
+            }
+
+            $findStmt->execute([':g' => $gid, ':n' => $name, ':k' => $keyLoc, ':s' => $site]);
             $existing = $findStmt->fetch();
 
             if ($existing) {
                 $apiId = (int) $existing['id'];
-                $updStmt->execute([':det' => $detStr, ':scan' => $nowTs, ':ua' => $nowTs, ':provider' => $provider, ':key' => $keyLoc, ':id' => $apiId]);
+                $updStmt->execute([':det' => $detStr, ':scan' => $nowTs, ':ua' => $nowTs, ':provider' => $provider, ':id' => $apiId]);
                 $updated++;
             } else {
-                $insStmt->execute([':g' => $gid, ':name' => $name, ':provider' => $provider, ':key' => $keyLoc, ':det' => $detStr, ':scan' => $nowTs, ':ca' => $nowTs, ':ua' => $nowTs]);
+                $insStmt->execute([':g' => $gid, ':name' => $name, ':provider' => $provider, ':site' => $site, ':key' => $keyLoc, ':det' => $detStr, ':scan' => $nowTs, ':ca' => $nowTs, ':ua' => $nowTs]);
                 $apiId = (int) $pdo->lastInsertId();
                 $created++;
             }
@@ -800,6 +822,14 @@ function merge_scan_results(int $gid, array $apis): array
     }
 
     return ['created' => $created, 'updated' => $updated, 'usages' => $usageCount];
+}
+
+/** 旧形式（サイト未設定）のエントリを一括削除。移行用。戻り値: 削除件数 */
+function delete_siteless_apis(int $gid): int
+{
+    $stmt = db()->prepare("DELETE FROM apis WHERE group_id = :g AND IFNULL(site,'') = ''");
+    $stmt->execute([':g' => $gid]);
+    return $stmt->rowCount();
 }
 
 /* ------------------------------------------------------------------ *
