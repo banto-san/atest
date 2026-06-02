@@ -320,6 +320,7 @@ $q            = trim((string) ($_GET['q'] ?? ''));
 $filterProv   = trim((string) ($_GET['provider'] ?? ''));
 $filterStatus = trim((string) ($_GET['status'] ?? ''));
 $filterSite   = trim((string) ($_GET['site'] ?? ''));
+$sort         = (($_GET['sort'] ?? 'cost') === 'name') ? 'name' : 'cost';
 
 $where  = ['a.group_id = :gid'];
 $params = [':gid' => $gid];
@@ -361,7 +362,11 @@ foreach ($groups as $gname => $rows) {
     foreach ($rows as $r) { $t += (float) ($r['monthly_cost'] ?? 0); }
     $groupTotal[$gname] = $t;
 }
-uksort($groups, static fn($a, $b) => ($groupTotal[$b] <=> $groupTotal[$a]) ?: strcmp($a, $b));
+if ($sort === 'name') {
+    uksort($groups, static fn($a, $b) => strcasecmp($a, $b));
+} else {
+    uksort($groups, static fn($a, $b) => ($groupTotal[$b] <=> $groupTotal[$a]) ?: strcmp($a, $b));
+}
 
 // サイト一覧（フィルタ用）/ 旧形式(サイト未設定)件数
 $sites = $pdo->prepare("SELECT DISTINCT site FROM apis WHERE group_id = :gid AND site <> '' ORDER BY site");
@@ -452,8 +457,14 @@ function render_styles(): void { ?>
     th { background:#f0f2f5; font-size:12px; color:var(--muted); font-weight:600; }
     td.cost { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; }
     tr.api-row:hover { background:#fafbfc; }
+    tr.group-head { cursor:pointer; }
     tr.group-head td { background:#eef2ff; color:#1e293b; border-top:2px solid #c7d2fe; }
+    tr.group-head:hover td { background:#e0e7ff; }
     tr.group-head strong { font-size:15px; }
+    .caret { display:inline-block; width:1em; color:#475569; }
+    td.group-cost { font-size:16px; font-weight:700; color:#0f172a; white-space:nowrap; }
+    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--line); border-radius:12px; }
+    .table-wrap table { border:none; border-radius:0; min-width:600px; }
     .muted { color:var(--muted); }
     .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
     .pill.active{background:#e7f6ec;color:#1a7f43;} .pill.unused{background:#eef1f4;color:#6b7280;}
@@ -481,7 +492,20 @@ function render_styles(): void { ?>
     .gbtn { display:inline-flex; align-items:center; gap:10px; padding:11px 18px; border:1px solid var(--line);
         border-radius:10px; background:#fff; color:#1f2733; text-decoration:none; font-weight:600; font-size:15px; }
     .gbtn:hover { background:#f8fafc; }
-    @media (max-width:720px){ .grid{grid-template-columns:1fr;} .hide-sm{display:none;} }
+    @media (max-width:720px){
+        .grid{grid-template-columns:1fr;}
+        .hide-sm{display:none;}
+        .wrap{padding:12px;}
+        .summary{gap:8px;}
+        .summary .stat{min-width:0;flex:1 1 45%;padding:10px 12px;}
+        .summary .stat .value{font-size:18px;}
+        .toolbar{padding:10px;}
+        .toolbar input, .toolbar select{flex:1 1 100%;}
+        .table-wrap table{min-width:520px;}
+        td.group-cost{font-size:15px;}
+        header.app{padding:10px 12px;gap:8px;}
+        header.app h1{font-size:16px;}
+    }
 </style>
 <?php }
 
@@ -823,6 +847,10 @@ function render_scan_page(array $user, array $group, int $gid): void
                 <option value="<?= h($k) ?>" <?= $k === $filterStatus ? 'selected' : '' ?>><?= h($v) ?></option>
             <?php endforeach; ?>
         </select>
+        <select name="sort" onchange="this.form.submit()">
+            <option value="cost" <?= $sort === 'cost' ? 'selected' : '' ?>>金額順</option>
+            <option value="name" <?= $sort === 'name' ? 'selected' : '' ?>>プロバイダ名順</option>
+        </select>
         <button class="primary" type="submit">絞り込み</button>
         <a class="btn" href="index.php">クリア</a>
         <span class="spacer"></span>
@@ -836,6 +864,8 @@ function render_scan_page(array $user, array $group, int $gid): void
         <div class="empty">該当するAPIがありません。<?= $editable ? '「＋ API を追加」から登録するか、「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
     <?php $colspan = $editable ? 7 : 6; ?>
+    <p class="hint" style="margin:0 0 8px">行（API）をクリックすると、サイトごとの内訳が開きます。</p>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -849,24 +879,38 @@ function render_scan_page(array $user, array $group, int $gid): void
             </tr>
         </thead>
         <tbody>
-        <?php foreach ($groups as $gname => $rows):
+        <?php $gi = 0; foreach ($groups as $gname => $rows): $gi++;
             $first = $rows[0];
-            $gcur = $first['currency'] ?: 'JPY';
-            $gsum = $groupTotal[$gname];
+            // 通貨別の月額合計
+            $curTotals = [];
+            foreach ($rows as $r) {
+                if ($r['monthly_cost'] !== null) {
+                    $c = $r['currency'] ?: 'JPY';
+                    $curTotals[$c] = ($curTotals[$c] ?? 0) + (float) $r['monthly_cost'];
+                }
+            }
+            ksort($curTotals);
+            $totalStr = $curTotals
+                ? implode('　', array_map(static fn($c, $v) => $c . ' ' . number_format($v, (fmod($v,1.0)===0.0)?0:2), array_keys($curTotals), $curTotals))
+                : '—';
+            $restcol = $colspan - 4;
         ?>
-            <tr class="group-head">
-                <td colspan="<?= $colspan ?>">
+            <tr class="group-head" onclick="toggleGroup(<?= $gi ?>)">
+                <td><span id="gtg<?= $gi ?>" class="caret">▶</span></td>
+                <td colspan="2">
                     🔷 <strong><?= h($gname) ?></strong>
                     <?php if ($first['provider']): ?><span class="muted">（<?= h($first['provider']) ?>）</span><?php endif; ?>
-                    <?php if ($first['docs_url']): ?><a href="<?= h($first['docs_url']) ?>" target="_blank" rel="noopener" class="muted" title="ドキュメント">📄</a><?php endif; ?>
-                    <span class="muted" style="font-weight:400">　— <?= count($rows) ?> 件（キー×サイト）／ 月額計 <?= h($gcur) ?> <?= number_format($gsum, (fmod($gsum,1.0)===0.0)?0:2) ?></span>
+                    <?php if ($first['docs_url']): ?><a href="<?= h($first['docs_url']) ?>" target="_blank" rel="noopener" class="muted" title="ドキュメント" onclick="event.stopPropagation()">📄</a><?php endif; ?>
+                    <span class="muted" style="font-weight:400">／ <?= count($rows) ?> サイト</span>
                 </td>
+                <td class="cost group-cost"><?= h($totalStr) ?></td>
+                <td colspan="<?= $restcol ?>"></td>
             </tr>
         <?php foreach ($rows as $a):
             $aid = (int) $a['id'];
             $uses = $usagesByApi[$aid] ?? [];
         ?>
-            <tr class="api-row">
+            <tr class="api-row g<?= $gi ?>-row" style="display:none">
                 <td>
                     <?php if ($uses): ?>
                         <button class="link" type="button" onclick="toggleUsage(<?= $aid ?>)" id="tg<?= $aid ?>" title="使用箇所を表示">▶</button>
@@ -903,7 +947,7 @@ function render_scan_page(array $user, array $group, int $gid): void
             </tr>
 
             <!-- ドリルダウン：使用箇所（サブ情報） -->
-            <tr class="usages" id="us<?= $aid ?>" style="display:none">
+            <tr class="usages g<?= $gi ?>-use" id="us<?= $aid ?>" style="display:none">
                 <td colspan="<?= $colspan ?>">
                     <table>
                         <thead><tr><th>repo</th><th>file</th><th>line</th><th>snippet</th><?php if ($editable): ?><th></th><?php endif; ?></tr></thead>
@@ -946,6 +990,7 @@ function render_scan_page(array $user, array $group, int $gid): void
         <?php endforeach; /* groups */ ?>
         </tbody>
     </table>
+    </div>
     <?php endif; ?>
 
     <p class="hint" style="margin-top:18px">
@@ -1015,6 +1060,17 @@ function render_scan_page(array $user, array $group, int $gid): void
 </script>
 <?php endif; ?>
 <script>
+    function toggleGroup(gi) {
+        const caret = document.getElementById('gtg' + gi);
+        const open = caret.textContent === '▶';
+        document.querySelectorAll('.g' + gi + '-row').forEach(r => r.style.display = open ? 'table-row' : 'none');
+        caret.textContent = open ? '▼' : '▶';
+        if (!open) {
+            // 閉じる時は中の使用箇所も畳む
+            document.querySelectorAll('.g' + gi + '-use').forEach(u => u.style.display = 'none');
+            document.querySelectorAll('.g' + gi + '-row [id^="tg"]').forEach(b => b.textContent = '▶');
+        }
+    }
     function toggleUsage(id) {
         const row = document.getElementById('us' + id);
         const tg  = document.getElementById('tg' + id);
