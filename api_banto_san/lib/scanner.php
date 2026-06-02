@@ -41,6 +41,7 @@ function scan_directory(string $root, array $providers, array $opts = []): array
 {
     $repo = (string) ($opts['repo'] ?? basename($root));
     $maxFiles = (int) ($opts['max_files'] ?? SCAN_MAX_FILES);
+    $secrets = !empty($opts['secrets']);   // .env等のキー値も取り込むか
 
     $real = realpath($root);
     if ($real === false || !is_dir($real)) {
@@ -120,9 +121,12 @@ function scan_directory(string $root, array $providers, array $opts = []): array
                 $pname    = (string) $p['name'];
                 $apiName  = (string) ($p['default_api_name'] ?? $pname);
                 $docsUrl  = (string) ($p['docs_url'] ?? '');
-                $hit = null;          // 検出タグ
+                // 環境変数名は sdk/host と独立に判定（env名にsdk名が部分一致しても拾えるように）
                 $envName = null;
-
+                foreach (($p['env'] ?? []) as $env) {
+                    if ($env !== '' && strpos($line, $env) !== false) { $envName = $env; break; }
+                }
+                $hit = null;          // 検出タグ（使用箇所記録用）
                 foreach (($p['sdk'] ?? []) as $tok) {
                     if ($tok !== '' && stripos($line, $tok) !== false) { $hit = 'sdk:' . $tok; break; }
                 }
@@ -131,17 +135,17 @@ function scan_directory(string $root, array $providers, array $opts = []): array
                         if ($host !== '' && stripos($line, $host) !== false) { $hit = 'host:' . $host; break; }
                     }
                 }
-                if (!$hit) {
-                    foreach (($p['env'] ?? []) as $env) {
-                        if ($env !== '' && strpos($line, $env) !== false) { $hit = 'env:' . $env; $envName = $env; break; }
-                    }
-                }
+                if (!$hit && $envName !== null) { $hit = 'env:' . $envName; }
 
                 if ($hit) {
                     $touch($found, $apiName, $pname, $docsUrl);
                     $found[$apiName]['detected_by'][$hit] = true;
                     if ($envName && $found[$apiName]['key_location'] === '') {
                         $found[$apiName]['key_location'] = 'env: ' . $envName;
+                    }
+                    if ($secrets && $envName && empty($found[$apiName]['secret'])) {
+                        $v = extract_env_value($line, $envName);
+                        if ($v !== null) { $found[$apiName]['secret'] = $v; }
                     }
                     add_usage($found[$apiName]['usages'], $repo, $rel, $lineNo, $line);
                 }
@@ -159,6 +163,10 @@ function scan_directory(string $root, array $providers, array $opts = []): array
                     $found[$name]['detected_by']['env:' . $envVar] = true;
                     if ($found[$name]['key_location'] === '') {
                         $found[$name]['key_location'] = 'env: ' . $envVar;
+                    }
+                    if ($secrets && empty($found[$name]['secret'])) {
+                        $v = extract_env_value($line, $envVar);
+                        if ($v !== null) { $found[$name]['secret'] = $v; }
                     }
                     add_usage($found[$name]['usages'], $repo, $rel, $lineNo, $line);
                 }
@@ -213,6 +221,22 @@ function redact_secrets(string $line): string
     // 3) = / : の後ろの長いクオート文字列（ハードコード値）
     $line = preg_replace('/([=:]\s*[\'"])[A-Za-z0-9_\-\.\/\+]{16,}([\'"])/', '${1}***${2}', $line);
     return $line;
+}
+
+/**
+ * `NAME=値` / `NAME: 値` 形式から実際の値を取り出す（取り込みON時のみ使用）。
+ * process.env.X / getenv 等の「参照」は値ではないので除外。取れなければ null。
+ */
+function extract_env_value(string $line, string $env): ?string
+{
+    if (!preg_match('/' . preg_quote($env, '/') . '["\']?\s*[:=]\s*["\']?([^\s"\'#;]{6,})/', $line, $m)) {
+        return null;
+    }
+    $val = $m[1];
+    if (preg_match('#^(process\.env|os\.environ|getenv|env\(|\$_ENV|\$_SERVER|\$\{|import\.meta|<|\{\{|%)#i', $val)) {
+        return null;   // コード上の参照（値ではない）
+    }
+    return $val;
 }
 
 /** その env 名が既知プロバイダのいずれかに定義済みか */

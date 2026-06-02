@@ -891,6 +891,16 @@ function merge_scan_results(int $gid, array $apis): array
                 ]);
                 $usageCount++;
             }
+
+            // キー値の自動取り込み（取り込みON時のみ／暗号鍵が必要）
+            if (!empty($a['secret']) && encryption_ready()) {
+                $plain = (string) $a['secret'];
+                $enc = encrypt_secret($plain);
+                if ($enc !== null) {
+                    $pdo->prepare('UPDATE apis SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id')
+                        ->execute([':e' => $enc, ':h' => secret_hint($plain), ':f' => secret_fingerprint($plain), ':id' => $apiId]);
+                }
+            }
         }
         $pdo->commit();
     } catch (Throwable $e) {
@@ -990,7 +1000,7 @@ function touch_scan_target(int $id): void
  *  SCAN_ALLOWED_ROOT が設定されていればその配下のみ許可。
  *  戻り値: merge_scan_results の結果
  * ------------------------------------------------------------------ */
-function run_scan_on_dir(int $gid, string $path, string $repo): array
+function run_scan_on_dir(int $gid, string $path, string $repo, bool $withSecrets = false): array
 {
     $real = $path !== '' ? realpath($path) : false;
     if ($real === false || !is_dir($real)) {
@@ -1004,7 +1014,7 @@ function run_scan_on_dir(int $gid, string $path, string $repo): array
         }
     }
     $providers = load_providers(__DIR__ . '/scanner/providers.json');
-    $found = scan_directory($real, $providers, ['repo' => ($repo !== '' ? $repo : basename($real))]);
+    $found = scan_directory($real, $providers, ['repo' => ($repo !== '' ? $repo : basename($real)), 'secrets' => $withSecrets]);
     return merge_scan_results($gid, $found);
 }
 
@@ -1117,7 +1127,7 @@ function extract_zip_into(string $zipTmp, string $destDir, int &$totalBytes): vo
 /**
  * アップロードされたファイル群（ZIP / 単体ソース / 複数）を走査してマージ。
  */
-function run_scan_on_uploads(int $gid, array $filesEntry, string $repo): array
+function run_scan_on_uploads(int $gid, array $filesEntry, string $repo, bool $withSecrets = false): array
 {
     $files = normalize_uploaded_files($filesEntry);
     if (!$files) {
@@ -1160,7 +1170,7 @@ function run_scan_on_uploads(int $gid, array $filesEntry, string $repo): array
             ? $repo
             : (count($files) === 1 ? preg_replace('/\.zip$/i', '', $firstName) : 'upload');
         $providers = load_providers(__DIR__ . '/scanner/providers.json');
-        $found = scan_directory($tmpRoot, $providers, ['repo' => $label]);
+        $found = scan_directory($tmpRoot, $providers, ['repo' => $label, 'secrets' => $withSecrets]);
         $res = merge_scan_results($gid, $found);
     } finally {
         rrmdir($tmpRoot);

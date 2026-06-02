@@ -143,10 +143,13 @@ if ($route === 'scan') {
         check_csrf();
         $a = $_POST['action'] ?? '';
 
+        $withSecrets = !empty($_POST['with_secrets']);
         // スキャン結果メッセージの共通整形
-        $say = static function (array $res): void {
-            flash('ok', sprintf('スキャン完了: 新規 %d 件 / 更新 %d 件 / 使用箇所 %d 件を反映（手動入力のコスト等は保持）。',
-                $res['created'], $res['updated'], $res['usages']));
+        $say = static function (array $res) use ($withSecrets): void {
+            $msg = sprintf('スキャン完了: 新規 %d 件 / 更新 %d 件 / 使用箇所 %d 件を反映（手動入力のコスト等は保持）。',
+                $res['created'], $res['updated'], $res['usages']);
+            if ($withSecrets) { $msg .= ' .env等のキー値も暗号化して取り込みました。'; }
+            flash('ok', $msg);
         };
 
         try {
@@ -170,7 +173,7 @@ if ($route === 'scan') {
                 if (!$t) {
                     flash('err', '対象が見つかりません。');
                 } else {
-                    $say(run_scan_on_dir($gid, $t['path'], $t['label']));
+                    $say(run_scan_on_dir($gid, $t['path'], $t['label'], $withSecrets));
                     touch_scan_target($tid);
                 }
             } elseif ($a === 'run_all') {
@@ -180,7 +183,7 @@ if ($route === 'scan') {
                 } else {
                     $tot = ['created' => 0, 'updated' => 0, 'usages' => 0];
                     foreach ($targets as $t) {
-                        $r = run_scan_on_dir($gid, $t['path'], $t['label']);
+                        $r = run_scan_on_dir($gid, $t['path'], $t['label'], $withSecrets);
                         foreach ($tot as $k => $_) { $tot[$k] += $r[$k]; }
                         touch_scan_target((int) $t['id']);
                     }
@@ -189,10 +192,10 @@ if ($route === 'scan') {
             } elseif ($a === 'run_path') {
                 $path = trim((string) ($_POST['path'] ?? ''));
                 $repo = trim((string) ($_POST['repo'] ?? ''));
-                $say(run_scan_on_dir($gid, $path, $repo));
+                $say(run_scan_on_dir($gid, $path, $repo, $withSecrets));
             } elseif ($a === 'upload_scan') {
                 $repo = trim((string) ($_POST['repo'] ?? ''));
-                $say(run_scan_on_uploads($gid, $_FILES['files'] ?? [], $repo));
+                $say(run_scan_on_uploads($gid, $_FILES['files'] ?? [], $repo, $withSecrets));
             }
         } catch (Throwable $e) {
             flash('err', 'スキャンに失敗しました: ' . $e->getMessage());
@@ -733,15 +736,28 @@ function render_scan_page(array $user, array $group, int $gid): void
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
 
     <p class="hint" style="margin-top:0">ソースを走査して外部APIの使用箇所を自動検出し、<strong><?= h($group['name']) ?></strong> のカタログに反映します。
-    手動入力したコスト・メモ・status は<strong>上書きされません</strong>。キー本体らしき値は保存前に伏字化します。
+    手動入力したコスト・メモ・status は<strong>上書きされません</strong>。使用箇所スニペットのキー値は伏字化します。
     <code>node_modules</code>/<code>vendor</code>/<code>.git</code> 等は自動除外。</p>
+
+    <!-- キー値の自動取り込み（オプトイン） -->
+    <div class="stat" style="width:100%;margin-bottom:14px;<?= encryption_ready() ? 'background:#f0fdf4;border-color:#86efac' : 'background:#fff4e0;border-color:#facc15' ?>">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;<?= encryption_ready() ? '' : 'color:#92400e' ?>">
+            <input type="checkbox" id="withSecretsToggle" style="width:auto" <?= encryption_ready() ? '' : 'disabled' ?>>
+            🔐 .env等に書かれた「キーの値」も暗号化して取り込む（コスト自動取得用）
+        </label>
+        <div class="hint" style="margin-top:4px">
+            <?= encryption_ready()
+                ? 'チェックを入れてスキャンすると、<code>NAME=値</code> 形式のキー値を拾って暗号化保存します（値そのものは画面に出ません）。off の時は従来どおり取り込みません。'
+                : '⚠ 使うには <code>APP_ENCRYPTION_KEY</code> の設定が必要です（config.local.php）。未設定のため今は無効です。' ?>
+        </div>
+    </div>
 
     <!-- ① 保存済みスキャン対象（ワンクリック） -->
     <div class="stat" style="width:100%;margin-bottom:14px">
         <div class="row" style="display:flex;justify-content:space-between;align-items:center">
             <h2 style="margin:0;font-size:16px">① 保存したフォルダをスキャン（heteml内・ワンクリック）</h2>
             <?php if (count($targets) > 1): ?>
-                <form method="post" style="margin:0">
+                <form method="post" class="scanform" style="margin:0">
                     <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                     <input type="hidden" name="action" value="run_all">
                     <button class="primary" type="submit">すべてスキャン</button>
@@ -760,7 +776,7 @@ function render_scan_page(array $user, array $group, int $gid): void
                         <td class="muted" style="word-break:break-all"><code><?= h($t['path']) ?></code></td>
                         <td class="muted"><?= h($t['last_scanned_at'] ?? '—') ?></td>
                         <td style="white-space:nowrap">
-                            <form method="post" style="display:inline">
+                            <form method="post" class="scanform" style="display:inline">
                                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                                 <input type="hidden" name="action" value="run_target">
                                 <input type="hidden" name="target_id" value="<?= (int) $t['id'] ?>">
@@ -783,7 +799,7 @@ function render_scan_page(array $user, array $group, int $gid): void
     <!-- ② スキャン対象フォルダを保存 -->
     <div class="stat" style="width:100%;margin-bottom:14px">
         <h2 style="margin:0 0 10px;font-size:16px">② スキャン対象フォルダを保存（最初の1回だけ）</h2>
-        <form method="post">
+        <form method="post" class="scanform">
             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
             <input type="hidden" name="action" value="add_target">
             <div class="field" style="margin-bottom:8px">
@@ -805,7 +821,7 @@ function render_scan_page(array $user, array $group, int $gid): void
         <h2 style="margin:0 0 8px;font-size:16px">③ ファイルをアップロードしてスキャン（PC・Gドライブのコード用）</h2>
         <p class="hint" style="margin:0 0 10px">heteml の外（手元PCやGドライブ）にあるコードは、ここからアップロードしてスキャンできます。SSH・トークン不要。<br>
         <strong>.py / .php / .js などのファイルをそのまま選択OK</strong>（複数選択も可）。フォルダごとなら ZIP にまとめてアップロードしてください。</p>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" class="scanform" enctype="multipart/form-data">
             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
             <input type="hidden" name="action" value="upload_scan">
             <div class="field" style="margin-bottom:8px">
@@ -822,7 +838,20 @@ function render_scan_page(array $user, array $group, int $gid): void
     </div>
 
     <p class="hint" style="margin-top:14px">⚠ 自分が管理するコードのみをスキャンしてください。</p>
-</div></body></html>
+</div>
+<script>
+    // 「キー値も取り込む」トグルを、各スキャンフォームの送信時に反映
+    document.addEventListener('submit', function (e) {
+        const f = e.target;
+        if (!f.classList || !f.classList.contains('scanform')) return;
+        const tg = document.getElementById('withSecretsToggle');
+        if (!tg) return;
+        let i = f.querySelector('input[name="with_secrets"]');
+        if (!i) { i = document.createElement('input'); i.type = 'hidden'; i.name = 'with_secrets'; f.appendChild(i); }
+        i.value = tg.checked ? '1' : '';
+    });
+</script>
+</body></html>
     <?php
 }
 ?>

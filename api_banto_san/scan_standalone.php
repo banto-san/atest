@@ -83,7 +83,7 @@ const ABT_MAX_FILE_BYTES = 524288;
 const ABT_MAX_FILES      = 20000;
 
 /* ============================ 検出エンジン ============================ */
-function abt_scan_directory(string $root, array $providers, string $repo): array
+function abt_scan_directory(string $root, array $providers, string $repo, bool $secrets = false): array
 {
     $real = realpath($root);
     if ($real === false || !is_dir($real)) {
@@ -132,14 +132,17 @@ function abt_scan_directory(string $root, array $providers, string $repo): array
             foreach ($providers as $p) {
                 $apiName = (string) ($p['default_api_name'] ?? $p['name']);
                 $docsUrl = (string) ($p['docs_url'] ?? '');
-                $hit = null; $envName = null;
+                $envName = null;
+                foreach (($p['env'] ?? []) as $env) { if ($env !== '' && strpos($line, $env) !== false) { $envName=$env; break; } }
+                $hit = null;
                 foreach (($p['sdk'] ?? []) as $tok)  { if ($tok !== '' && stripos($line, $tok) !== false) { $hit='sdk:'.$tok; break; } }
                 if (!$hit) foreach (($p['host'] ?? []) as $host) { if ($host !== '' && stripos($line, $host) !== false) { $hit='host:'.$host; break; } }
-                if (!$hit) foreach (($p['env'] ?? []) as $env)  { if ($env !== '' && strpos($line, $env) !== false) { $hit='env:'.$env; $envName=$env; break; } }
+                if (!$hit && $envName !== null) { $hit='env:'.$envName; }
                 if ($hit) {
                     $touch($found, $apiName, (string) $p['name'], $docsUrl);
                     $found[$apiName]['detected_by'][$hit] = true;
                     if ($envName && $found[$apiName]['key_location'] === '') { $found[$apiName]['key_location'] = 'env: ' . $envName; }
+                    if ($secrets && $envName && empty($found[$apiName]['secret'])) { $v = abt_extract_env_value($line, $envName); if ($v !== null) { $found[$apiName]['secret'] = $v; } }
                     abt_add_usage($found[$apiName]['usages'], $repo, $rel, $lineNo, $line);
                 }
             }
@@ -152,6 +155,7 @@ function abt_scan_directory(string $root, array $providers, string $repo): array
                     $touch($found, $name, $prefix, '');
                     $found[$name]['detected_by']['env:' . $envVar] = true;
                     if ($found[$name]['key_location'] === '') { $found[$name]['key_location'] = 'env: ' . $envVar; }
+                    if ($secrets && empty($found[$name]['secret'])) { $v = abt_extract_env_value($line, $envVar); if ($v !== null) { $found[$name]['secret'] = $v; } }
                     abt_add_usage($found[$name]['usages'], $repo, $rel, $lineNo, $line);
                 }
             }
@@ -168,6 +172,19 @@ function abt_add_usage(array &$usages, string $repo, string $file, int $line, st
     if (count($usages) >= 500) { return; }
     foreach ($usages as $u) { if ($u['file'] === $file && $u['line'] === $line) { return; } }
     $usages[] = ['repo'=>$repo,'file'=>$file,'line'=>$line,'snippet'=>abt_redact(trim(mb_substr($snippet, 0, 240)))];
+}
+
+/** `NAME=値` / `NAME: 値` から値を抽出（参照は除外）。取れなければ null */
+function abt_extract_env_value(string $line, string $env): ?string
+{
+    if (!preg_match('/' . preg_quote($env, '/') . '["\']?\s*[:=]\s*["\']?([^\s"\'#;]{6,})/', $line, $m)) {
+        return null;
+    }
+    $val = $m[1];
+    if (preg_match('#^(process\.env|os\.environ|getenv|env\(|\$_ENV|\$_SERVER|\$\{|import\.meta|<|\{\{|%)#i', $val)) {
+        return null;
+    }
+    return $val;
 }
 
 function abt_is_known_env(array $providers, string $envVar): bool
@@ -187,7 +204,7 @@ function abt_redact(string $line): string
 }
 
 /* ============================ CLI ============================ */
-$opts = getopt('', ['path:', 'repo:', 'out:', 'push', 'endpoint:', 'group:', 'token:', 'providers:', 'help']);
+$opts = getopt('', ['path:', 'repo:', 'out:', 'push', 'endpoint:', 'group:', 'token:', 'providers:', 'with-secrets', 'help']);
 if (isset($opts['help']) || !isset($opts['path'])) {
     fwrite(STDOUT, <<<TXT
 api_banto_san スタンドアロン・スキャナ（1ファイル版）
@@ -200,6 +217,7 @@ api_banto_san スタンドアロン・スキャナ（1ファイル版）
   --group <id>        送信先グループID
   --token <token>     個人用トークン（省略時は環境変数 APICATALOG_TOKEN）
   --providers <file>  プロバイダ定義JSONで内蔵定義を上書き（任意）
+  --with-secrets      .env等の「キーの値」も取り込む（暗号化保存・取り扱い注意）
   --help              このヘルプ
 
 例:
@@ -220,9 +238,13 @@ if (isset($opts['providers']) && is_file((string) $opts['providers'])) {
     if (isset($j['providers']) && is_array($j['providers'])) { $providers = $j['providers']; }
 }
 
+$withSecrets = isset($opts['with-secrets']);
+if ($withSecrets) {
+    fwrite(STDERR, "※ --with-secrets: .env等のキー値も取り込みます（出力JSON/送信にキー値が含まれます。取り扱い注意）。\n");
+}
 fwrite(STDERR, "走査中: $path (repo=$repo) ...\n");
 try {
-    $apis = abt_scan_directory($path, $providers, $repo);
+    $apis = abt_scan_directory($path, $providers, $repo, $withSecrets);
 } catch (Throwable $e) {
     fwrite(STDERR, 'エラー: ' . $e->getMessage() . "\n");
     exit(1);

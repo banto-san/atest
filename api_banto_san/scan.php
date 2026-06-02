@@ -31,7 +31,7 @@ if (PHP_SAPI !== 'cli') {
 require __DIR__ . '/lib/scanner.php';
 
 // --- 引数パース ---
-$opts = getopt('', ['path:', 'repo:', 'out:', 'push', 'endpoint:', 'group:', 'token:', 'providers:', 'help']);
+$opts = getopt('', ['path:', 'repo:', 'out:', 'push', 'endpoint:', 'group:', 'token:', 'providers:', 'with-secrets', 'help']);
 if (isset($opts['help']) || !isset($opts['path'])) {
     fwrite(STDOUT, file_get_contents(__FILE__, false, null, 0, 0) ?: '');
     fwrite(STDOUT, <<<TXT
@@ -45,6 +45,7 @@ api_banto_san スキャナ CLI
   --group <id>        送信先グループID
   --token <token>     個人用トークン（省略時は環境変数 APICATALOG_TOKEN）
   --providers <file>  プロバイダ定義JSON（既定: scanner/providers.json）
+  --with-secrets      .env等の「キーの値」も取り込む（暗号化保存・取り扱い注意）
   --help              このヘルプ
 
 例:
@@ -68,7 +69,7 @@ $repo = (string) ($opts['repo'] ?? basename(rtrim($path, '/\\')));
 
 fwrite(STDERR, "走査中: $path (repo=$repo) ...\n");
 try {
-    $apis = scan_directory($path, $providers, ['repo' => $repo]);
+    $apis = scan_directory($path, $providers, ['repo' => $repo, 'secrets' => isset($opts['with-secrets'])]);
 } catch (Throwable $e) {
     fwrite(STDERR, 'エラー: ' . $e->getMessage() . "\n");
     exit(1);
