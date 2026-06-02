@@ -1,6 +1,7 @@
 import os
 import time
 import csv
+import random
 import urllib.request
 import urllib.parse
 import gspread
@@ -9,6 +10,7 @@ import re
 import ssl
 import requests
 import urllib3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -65,10 +67,15 @@ HEADER_NOT_FOUND = [
     "【検索結果】1ページ目URL", "チェック日時"
 ]
 
-# 💡 電話番号探索の設定
-PHONE_FETCH_TIMEOUT = 10   # requestsで1サイトを読み込む最大秒数
-PHONE_FETCH_WAIT = 1       # サイト間の待機秒数（アクセス過多防止）
-USE_SELENIUM_FALLBACK = True   # requestsで取れなかったらSeleniumで開き直すか
+# 💡 速度＆Googleブロック回避の設定
+SEARCH_DELAY_MIN = 4       # 次のGoogle検索までの待機（最小秒）※Googleブロック回避の要
+SEARCH_DELAY_MAX = 7       # 次のGoogle検索までの待機（最大秒）※固定値より検知されにくい
+SEARCH_RESULT_TIMEOUT = 8  # Google検索結果の表示を待つ最大秒（出たら即進む）
+
+# 💡 電話番号探索の設定（探索先は他社サイト＝Google無関係なので並列OK）
+PHONE_MAX_WORKERS = 8      # 同時に開くサイト数（多いほど速いが負荷も上がる）
+PHONE_FETCH_TIMEOUT = 7    # requestsで1サイトを読み込む最大秒数
+USE_SELENIUM_FALLBACK = True   # requestsで取れなかったサイトだけSeleniumで開き直すか
 
 # ==========================================
 # 💡 日本の電話番号パターン
@@ -136,36 +143,24 @@ def page_has_address(text, clean_address):
     norm_addr = re.sub(r'\s', '', clean_address)
     return bool(norm_addr) and norm_addr in norm_text
 
-# 💡 1つのサイトを開いて「会社名＋住所の一致確認」と「電話番号探索」を行う関数
+# 💡 サイトのHTMLを requests で取得するだけの関数（並列実行用に軽くしてある）
+def fetch_html(url, session):
+    try:
+        r = session.get(url, timeout=PHONE_FETCH_TIMEOUT)
+        r.encoding = r.apparent_encoding  # 文字化け対策
+        return r.text or ""
+    except Exception:
+        return ""
+
+# 💡 取得済みHTMLを解析して「会社名＋住所の一致確認」と「電話番号探索」を行う関数
 #    戻り値は dict。 name_matched と address_matched の両方が True かつ phone があるときだけ信用してよい。
-def inspect_site(url, org_name, clean_address, driver=None):
+def analyze_html(html, url, org_name, clean_address):
     result = {
-        "url": url, "fetched": False, "phone": "", "how": "",
+        "url": url, "fetched": bool(html), "phone": "", "how": "",
         "name_matched": False, "address_matched": False, "page_title": "",
     }
-
-    html = ""
-    # --- ① まず requests で軽く取得（速い） ---
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        r = requests.get(url, headers=headers, timeout=PHONE_FETCH_TIMEOUT)
-        r.encoding = r.apparent_encoding  # 文字化け対策
-        html = r.text
-    except Exception:
-        html = ""
-
-    # --- ② requestsで取れなければ Selenium で開き直す（保険） ---
-    if not html and driver is not None and USE_SELENIUM_FALLBACK:
-        try:
-            driver.get(url)
-            time.sleep(3)
-            html = driver.page_source
-        except Exception:
-            html = ""
-
     if not html:
         return result
-    result["fetched"] = True
 
     # --- ページタイトル（社名確認＆記録用） ---
     mt = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
@@ -244,6 +239,12 @@ try:
         driver = init_driver()
         wait = WebDriverWait(driver, 10)
 
+        # 💡 電話番号探索用のセッション（接続を使い回して高速化）
+        phone_session = requests.Session()
+        phone_session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+
         for idx, target in enumerate(search_targets):
             org_name = target['name']
             full_address = target['address']
@@ -255,7 +256,14 @@ try:
 
             safe_query = urllib.parse.quote(search_query)
             driver.get(f"https://www.google.com/search?q={safe_query}")
-            time.sleep(5)
+            # 💡 固定5秒待ちはやめ、検索結果が表示されたら即進む（出ないときだけ少し待つ）
+            try:
+                WebDriverWait(driver, SEARCH_RESULT_TIMEOUT).until(
+                    EC.presence_of_element_located((By.ID, "search"))
+                )
+            except Exception:
+                pass
+            time.sleep(0.5)  # 描画の取りこぼし防止の最小マージン
 
             gbp_name = ""
             gbp_category = ""
@@ -365,8 +373,28 @@ try:
                     verified_sites = []     # 社名・住所が一致して番号が取れたサイトの記録
                     skipped_mismatch = 0    # 番号はあったが社名or住所不一致で除外した件数
 
-                    for site_url in search_urls:   # 💡 1ページ目すべてを探索
-                        res = inspect_site(site_url, org_name, clean_address, driver=driver)
+                    # --- ① 1ページ目の全サイトを「並列で」requests取得（ここが高速化の要） ---
+                    html_map = {}
+                    with ThreadPoolExecutor(max_workers=PHONE_MAX_WORKERS) as ex:
+                        future_map = {ex.submit(fetch_html, u, phone_session): u for u in search_urls}
+                        for fut in as_completed(future_map):
+                            html_map[future_map[fut]] = fut.result()
+
+                    # --- ② requestsで取れなかったサイトだけ Selenium で開き直す（保険・順次） ---
+                    #     ただしブラウザは1つしか無いので順次。負荷も考え、失敗分のみに限定。
+                    if USE_SELENIUM_FALLBACK:
+                        for u in search_urls:
+                            if not html_map.get(u):
+                                try:
+                                    driver.get(u)
+                                    time.sleep(2)
+                                    html_map[u] = driver.page_source
+                                except Exception:
+                                    html_map[u] = ""
+
+                    # --- ③ 検索順（=関連度順）に解析。社名＋住所が一致した番号だけ採用 ---
+                    for site_url in search_urls:
+                        res = analyze_html(html_map.get(site_url, ""), site_url, org_name, clean_address)
 
                         if res["phone"] and res["name_matched"] and res["address_matched"]:
                             # ✅ 社名＋住所が一致 ＆ 番号あり → 信用して採用
@@ -386,8 +414,6 @@ try:
                         else:
                             print(f"  ・番号なし @ {site_url}")
 
-                        time.sleep(PHONE_FETCH_WAIT)
-
                     if first_phone:
                         phone_mark = "📞あり（社名・住所一致）"
                     else:
@@ -406,8 +432,9 @@ try:
             except Exception as e:
                 print(f"❌ スプレッドシートの書き込みに失敗しました: {e}")
 
-            print("💤 ロボット検知を避けるため、10秒待機します...")
-            time.sleep(10)
+            wait_sec = random.uniform(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX)
+            print(f"💤 ロボット検知を避けるため、{wait_sec:.1f}秒待機します...")
+            time.sleep(wait_sec)
 
         print("\n✨ すべてのデータ抽出処理が完了しました！！")
 
