@@ -74,7 +74,11 @@ SEARCH_RESULT_TIMEOUT = 8  # Google検索結果の表示を待つ最大秒（出
 
 # 💡 安定動作（大量件数・長時間でも止まらないための設定）
 PAGE_LOAD_TIMEOUT = 30     # ページ読み込みで固まったら諦める秒数（120秒ハング防止）
-RESUME_SKIP_DONE = True    # 既にシートに記録済みの会社はスキップ（途中から再開できる）
+
+# 💡 常時ループ運用の設定
+CONTINUOUS_LOOP = True       # 全件チェックが終わってもループし続け、新しい番号が出ていないか探し続ける
+PASS_INTERVAL_SECONDS = 1800 # 1周終わってから次の周に入るまでの待機（秒）。30分=1800、すぐ次へなら0
+SKIP_IF_HAS_PHONE = True     # 既に電話番号を取得済みの会社はスキップし、未取得だけ再チェックする
 
 # 💡 電話番号探索の設定（探索先は他社サイト＝Google無関係なので並列OK）
 PHONE_MAX_WORKERS = 8      # 同時に開くサイト数（多いほど速いが負荷も上がる）
@@ -151,6 +155,15 @@ def ensure_header(ws, header):
         # 古いgspread（引数の順番が違う）向けのフォールバック
         ws.update("A1", [header], value_input_option="USER_ENTERED")
     print(f"   🧹 シート『{ws.title}』の見出しを最新の並びにそろえました。")
+
+# 💡 指定した行（1始まり）を丸ごと上書き更新する（gspreadの新旧どちらの引数順でも動く）
+def update_row(ws, row_number, values):
+    last_col = chr(ord('A') + len(values) - 1)   # 値の数から末尾列を決める（最大Z想定でOK）
+    rng = f"A{row_number}:{last_col}{row_number}"
+    try:
+        ws.update(range_name=rng, values=[values], value_input_option="USER_ENTERED")
+    except TypeError:
+        ws.update(rng, [values], value_input_option="USER_ENTERED")
 
 # 💡 会社名を比較するために、余計な文字（株式会社やスペース）を削る魔法の関数
 def clean_company_name(name):
@@ -258,9 +271,197 @@ def analyze_html(html, url, org_name, clean_address):
     return result
 
 # ==========================================
+# 💡 1社ぶんの「検索 → 記録 or 上書き更新」をまとめて行う
+#    戻り値は driver（ブラウザ再起動した場合は新しいものに差し替わる）
+#    nf_row_map に (会社名,住所)->行番号 があれば、その行を上書き更新する（追記しない）
+# ==========================================
+def process_one_target(target, idx, total, driver, phone_session, ws_found, ws_not_found, nf_row_map):
+    org_name = target['name']
+    full_address = target['address']
+    key = (org_name.strip(), full_address.strip())
+
+    try:
+        clean_address = re.sub(r'[0-9０-９]+(丁目|番|号|番地|-|ー|‐).*', '', full_address)
+        search_query = f"{org_name} {clean_address}"
+        print(f"\n[{idx + 1}/{total}] 🔍 検索中: {search_query}")
+
+        safe_query = urllib.parse.quote(search_query)
+        driver.get(f"https://www.google.com/search?q={safe_query}")
+        # 検索結果が表示されたら即進む（出ないときだけ少し待つ）
+        try:
+            WebDriverWait(driver, SEARCH_RESULT_TIMEOUT).until(
+                EC.presence_of_element_located((By.ID, "search"))
+            )
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+        gbp_name = ""
+        gbp_category = ""
+        gbp_address = ""
+        gbp_phone = ""
+        gbp_website = ""
+        gbp_map_url = ""
+        search_urls = []
+        urls_str = ""
+
+        # --- GBP（ナレッジパネル）の抽出 ---
+        try:
+            kp_box = driver.find_elements(By.ID, "rhs")
+            if len(kp_box) > 0:
+                print("🎯 画面右側にGBPらしき枠を発見しました！")
+                try: gbp_name = driver.find_element(By.XPATH, "//div[@id='rhs']//h2[@data-attrid='title']").text
+                except: pass
+                try: gbp_category = driver.find_element(By.XPATH, "//div[@id='rhs']//span[contains(@class, 'YhemCb')]").text
+                except: pass
+                try: gbp_address = driver.find_element(By.XPATH, "//div[@id='rhs']//span[contains(text(), '所在地') or contains(text(), '住所')]/following-sibling::span").text
+                except: pass
+                try:
+                    gbp_phone = driver.find_element(By.XPATH, "//div[@id='rhs']//span[contains(text(), '電話番号')]/following-sibling::span//span").text
+                except:
+                    try: gbp_phone = driver.find_element(By.XPATH, "//div[@id='rhs']//span[contains(@aria-label, '電話番号')]").text
+                    except: pass
+                try:
+                    website_btn = driver.find_element(By.XPATH, "//div[@id='rhs']//a[contains(text(), 'ウェブサイト') or contains(., 'ウェブサイト')]")
+                    gbp_website = website_btn.get_attribute("href")
+                except: pass
+                try:
+                    map_links = driver.find_elements(By.XPATH, "//div[@id='rhs']//a[contains(@href, '/maps/')]")
+                    for link in map_links:
+                        href = link.get_attribute("href")
+                        if href:
+                            gbp_map_url = href
+                            break
+                except: pass
+            else:
+                print("⚠️ GBP（ナレッジパネル）は表示されませんでした。")
+        except Exception as e:
+            print(f"⚠️ GBP抽出中にエラー: {e}")
+
+        # --- 検索結果（1ページ目）のURL抽出 ---
+        try:
+            result_links = driver.find_elements(By.XPATH, "//div[@class='yuRUbf']//a")
+            for link in result_links:
+                url = link.get_attribute("href")
+                if url and "google.com" not in url:
+                    search_urls.append(url)
+            search_urls = list(dict.fromkeys(search_urls))
+            urls_str = "\n".join(search_urls)
+        except:
+            urls_str = ""
+
+        # --- GBP一致判定 ---
+        is_gbp_match = False
+        match_reason = ""
+        if gbp_name:
+            clean_org = clean_company_name(org_name)
+            clean_gbp = clean_company_name(gbp_name)
+            if clean_org and clean_gbp and (clean_org in clean_gbp or clean_gbp in clean_org):
+                is_gbp_match = True
+            else:
+                match_reason = f"名前不一致 (検索: {org_name} ≠ GBP: {gbp_name})"
+        else:
+            match_reason = "GBP表示なし"
+
+        # --- 記録（追記 or 上書き更新） ---
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            if is_gbp_match:
+                print(f"✅ 名前が一致しました！ [GBPあり] シートに記録します。")
+                ws_found.append_row([
+                    org_name, full_address, clean_address, gbp_name, gbp_category,
+                    gbp_address, gbp_phone, gbp_website, gbp_map_url, urls_str, now_str
+                ], value_input_option='USER_ENTERED', table_range='A1')
+                # 以前「GBPなし」に居た会社なら、紛らわしいので旧行に印を付けておく
+                if key in nf_row_map:
+                    update_row(ws_not_found, nf_row_map[key], [
+                        org_name, full_address, clean_address,
+                        "→GBP一致（GBPありシートに記録済み）", "GBPあり側で取得", "", "",
+                        urls_str, now_str
+                    ])
+            else:
+                print(f"❌ {match_reason}。 [GBPなし]→1ページ目の全サイトから電話番号を探します。")
+                first_phone = ""        # 代表として記録する電話番号（社名＋住所一致の最初の1件）
+                verified_sites = []     # 社名・住所が一致して番号が取れたサイトの記録
+                skipped_mismatch = 0    # 番号はあったが社名or住所不一致で除外した件数
+
+                # ① 1ページ目の全サイトを「並列で」requests取得（高速化の要）
+                html_map = {}
+                with ThreadPoolExecutor(max_workers=PHONE_MAX_WORKERS) as ex:
+                    future_map = {ex.submit(fetch_html, u, phone_session): u for u in search_urls}
+                    for fut in as_completed(future_map):
+                        html_map[future_map[fut]] = fut.result()
+
+                # ② requestsで取れなかったサイトだけ Selenium で開き直す（保険・順次）
+                if USE_SELENIUM_FALLBACK:
+                    for u in search_urls:
+                        if not html_map.get(u):
+                            try:
+                                driver.get(u)
+                                time.sleep(2)
+                                html_map[u] = driver.page_source
+                            except Exception:
+                                html_map[u] = ""
+
+                # ③ 検索順（=関連度順）に解析。社名＋住所が一致した番号だけ採用
+                for site_url in search_urls:
+                    res = analyze_html(html_map.get(site_url, ""), site_url, org_name, clean_address)
+                    if res["phone"] and res["name_matched"] and res["address_matched"]:
+                        print(f"  ✅📞 {res['phone']}（{res['how']}） @ {site_url}")
+                        if not first_phone:
+                            first_phone = res["phone"]
+                        verified_sites.append(
+                            f"{res['phone']}（{res['how']}）\n  └ URL: {site_url}\n  └ ページ会社名: {res['page_title']}"
+                        )
+                    elif res["is_aggregator"]:
+                        print(f"  🚫 媒体/ポータルのため番号取得をスキップ @ {site_url}")
+                    elif res["phone"]:
+                        skipped_mismatch += 1
+                        ng = []
+                        if not res["name_matched"]: ng.append("社名")
+                        if not res["address_matched"]: ng.append("住所")
+                        print(f"  ⚠️ 番号あり・但し{'/'.join(ng)}不一致のため除外 @ {site_url}（ページ: {res['page_title']}）")
+                    else:
+                        print(f"  ・該当番号なし（社名/住所の近くに番号が無い） @ {site_url}")
+
+                if first_phone:
+                    phone_mark = "📞あり（社名・住所一致）"
+                else:
+                    phone_mark = "電話番号なし"
+                    if skipped_mismatch:
+                        phone_mark += f"（社名/住所不一致で{skipped_mismatch}件除外）"
+
+                sites_str = "\n".join(verified_sites)
+                print(f"  → 判定: {phone_mark}（採用サイト {len(verified_sites)}件 / 除外 {skipped_mismatch}件）")
+
+                row_values = [
+                    org_name, full_address, clean_address, match_reason,
+                    phone_mark, first_phone, sites_str, urls_str, now_str
+                ]
+                if key in nf_row_map:
+                    # 💡 既にGBPなしシートに在る会社 → 行を上書き更新（重複行を増やさない）
+                    update_row(ws_not_found, nf_row_map[key], row_values)
+                    print(f"  ♻️ 既存行(行{nf_row_map[key]})を上書き更新しました。")
+                else:
+                    ws_not_found.append_row(row_values, value_input_option='USER_ENTERED', table_range='A1')
+        except Exception as e:
+            print(f"❌ スプレッドシートの書き込みに失敗しました: {e}")
+
+    except Exception as e:
+        # 🚨 想定外のエラー（ブラウザのハング等）→ スキップして続行。不調なら再起動。
+        print(f"⚠️ この案件でエラーのためスキップして続行します: {org_name}（{e.__class__.__name__}: {e}）")
+        if not driver_is_alive(driver):
+            print("   🔄 ブラウザが応答しないため再起動します...")
+            try: driver.quit()
+            except Exception: pass
+            driver = init_driver()
+
+    return driver
+
+# ==========================================
 # 🚀 メイン処理
 # ==========================================
-print("🚀 Google検索ロボット（高精度モード＋電話番号探索）を起動します...")
+print("🚀 Google検索ロボット（常時ループ・電話番号探索）を起動します...")
 
 driver = None
 try:
@@ -279,18 +480,6 @@ try:
     ensure_header(ws_not_found, HEADER_NOT_FOUND)
 
     print("✅ スプレッドシート接続完了！")
-
-    # 💡 途中再開用：既に記録済みの（会社名, 住所）を覚えておき、重複処理をスキップする
-    processed = set()
-    if RESUME_SKIP_DONE:
-        for ws in (ws_found, ws_not_found):
-            try:
-                for row in ws.get_all_values()[1:]:   # 1行目は見出しなので除く
-                    if len(row) >= 2:
-                        processed.add((row[0].strip(), row[1].strip()))
-            except Exception:
-                pass
-        print(f"🔁 既に処理済み: {len(processed)} 件 → これらはスキップして続きから再開します。")
 
     search_targets = []
     if not os.path.exists(INPUT_CSV_FILE):
@@ -314,7 +503,6 @@ try:
 
     if len(search_targets) > 0:
         driver = init_driver()
-        wait = WebDriverWait(driver, 10)
 
         # 💡 電話番号探索用のセッション（接続を使い回して高速化）
         phone_session = requests.Session()
@@ -322,226 +510,64 @@ try:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
 
-        for idx, target in enumerate(search_targets):
-            org_name = target['name']
-            full_address = target['address']
+        total = len(search_targets)
+        pass_no = 0
+        # 🔁 常時ループ：全件を一周したら、未取得の会社だけ何度でも再チェックし続ける
+        while True:
+            pass_no += 1
+            print(f"\n================== 第 {pass_no} 周 開始 ==================")
 
-            # 💡 既に記録済みならスキップ（途中で落ちても続きから再開できる）
-            key = (org_name.strip(), full_address.strip())
-            if RESUME_SKIP_DONE and key in processed:
-                print(f"[{idx + 1}/{len(search_targets)}] ⏭ 処理済みのためスキップ: {org_name}")
-                continue
-
-            # 💡 1件ごとに try で包む。ここで何が起きても全体は止めず、次の案件へ進む。
+            # 💡 周の冒頭でシートを読み直し、「取得済み(=スキップ)」と
+            #    「GBPなしシートの行番号(=上書き更新先)」を作り直す
+            have_phone = set()   # 既に電話番号がある会社（スキップ対象）
+            nf_row_map = {}      # (会社名,住所) -> GBPなしシートの行番号
             try:
-                clean_address = re.sub(r'[0-9０-９]+(丁目|番|号|番地|-|ー|‐).*', '', full_address)
-                search_query = f"{org_name} {clean_address}"
+                for row in ws_found.get_all_values()[1:]:
+                    if len(row) >= 2:
+                        have_phone.add((row[0].strip(), row[1].strip()))   # GBPあり=取得済み扱い
+            except Exception:
+                pass
+            try:
+                for i, row in enumerate(ws_not_found.get_all_values()[1:], start=2):
+                    if len(row) >= 2:
+                        k = (row[0].strip(), row[1].strip())
+                        nf_row_map[k] = i
+                        # F列(6列目)=発見した電話番号 が入っていれば「取得済み」
+                        if len(row) >= 6 and row[5].strip():
+                            have_phone.add(k)
+            except Exception:
+                pass
+            recheck = sum(1 for t in search_targets
+                          if (t['name'].strip(), t['address'].strip()) not in have_phone)
+            print(f"🔁 取得済み(スキップ): {len(have_phone)} 件 / 今周の再チェック対象: 約 {recheck} 件")
 
-                print(f"\n[{idx + 1}/{len(search_targets)}] 🔍 検索中: {search_query}")
+            handled = set()   # この周で処理済みのkey（CSV重複対策）
+            for idx, target in enumerate(search_targets):
+                key = (target['name'].strip(), target['address'].strip())
 
-                safe_query = urllib.parse.quote(search_query)
-                driver.get(f"https://www.google.com/search?q={safe_query}")
-                # 💡 固定5秒待ちはやめ、検索結果が表示されたら即進む（出ないときだけ少し待つ）
-                try:
-                    WebDriverWait(driver, SEARCH_RESULT_TIMEOUT).until(
-                        EC.presence_of_element_located((By.ID, "search"))
-                    )
-                except Exception:
-                    pass
-                time.sleep(0.5)  # 描画の取りこぼし防止の最小マージン
+                # 💡 既に電話番号がある会社は飛ばす（未取得だけ再チェック）
+                if SKIP_IF_HAS_PHONE and key in have_phone:
+                    continue
+                if key in handled:
+                    continue
+                handled.add(key)
 
-                gbp_name = ""
-                gbp_category = ""
-                gbp_address = ""
-                gbp_phone = ""
-                gbp_website = ""
-                gbp_map_url = ""
-                search_urls = []
-                urls_str = ""
+                driver = process_one_target(target, idx, total, driver,
+                                            phone_session, ws_found, ws_not_found, nf_row_map)
 
-                # ==========================================
-                # 💡 GBP（ナレッジパネル）の抽出とURL取得
-                # ==========================================
-                try:
-                    kp_box = driver.find_elements(By.ID, "rhs")
-                    if len(kp_box) > 0:
-                        print("🎯 画面右側にGBPらしき枠を発見しました！")
+                wait_sec = random.uniform(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX)
+                print(f"💤 ロボット検知を避けるため、{wait_sec:.1f}秒待機します...")
+                time.sleep(wait_sec)
 
-                        try: gbp_name = driver.find_element(By.XPATH, "//div[@id='rhs']//h2[@data-attrid='title']").text
-                        except: pass
+            print(f"\n✨ 第 {pass_no} 周 完了！（取得済みは次周もスキップ／未取得は再チェックします）")
+            if not CONTINUOUS_LOOP:
+                break
+            mins = PASS_INTERVAL_SECONDS / 60
+            print(f"💤 次の周まで {PASS_INTERVAL_SECONDS} 秒（約 {mins:.0f} 分）休みます...（止めるときは Ctrl+C）")
+            time.sleep(PASS_INTERVAL_SECONDS)
 
-                        try: gbp_category = driver.find_element(By.XPATH, "//div[@id='rhs']//span[contains(@class, 'YhemCb')]").text
-                        except: pass
-
-                        try: gbp_address = driver.find_element(By.XPATH, "//div[@id='rhs']//span[contains(text(), '所在地') or contains(text(), '住所')]/following-sibling::span").text
-                        except: pass
-
-                        try:
-                            gbp_phone = driver.find_element(By.XPATH, "//div[@id='rhs']//span[contains(text(), '電話番号')]/following-sibling::span//span").text
-                        except:
-                            try: gbp_phone = driver.find_element(By.XPATH, "//div[@id='rhs']//span[contains(@aria-label, '電話番号')]").text
-                            except: pass
-
-                        try:
-                            website_btn = driver.find_element(By.XPATH, "//div[@id='rhs']//a[contains(text(), 'ウェブサイト') or contains(., 'ウェブサイト')]")
-                            gbp_website = website_btn.get_attribute("href")
-                        except: pass
-
-                        # 💡 GoogleマップのURL取得
-                        try:
-                            map_links = driver.find_elements(By.XPATH, "//div[@id='rhs']//a[contains(@href, '/maps/')]")
-                            for link in map_links:
-                                href = link.get_attribute("href")
-                                if href:
-                                    gbp_map_url = href
-                                    break
-                        except: pass
-
-                    else:
-                        print("⚠️ GBP（ナレッジパネル）は表示されませんでした。")
-                except Exception as e:
-                    print(f"⚠️ GBP抽出中にエラー: {e}")
-
-                # ==========================================
-                # 💡 検索結果（1ページ目）のURL抽出
-                # ==========================================
-                try:
-                    result_links = driver.find_elements(By.XPATH, "//div[@class='yuRUbf']//a")
-                    for link in result_links:
-                        url = link.get_attribute("href")
-                        if url and "google.com" not in url:
-                            search_urls.append(url)
-                    search_urls = list(dict.fromkeys(search_urls))
-                    urls_str = "\n".join(search_urls)
-                except:
-                    urls_str = ""
-
-                # ==========================================
-                # 💡 高精度チェック！名前は一致しているか？
-                # ==========================================
-                is_gbp_match = False
-                match_reason = ""
-
-                if gbp_name:
-                    # 株式会社などを削って純粋な名前同士で比較する
-                    clean_org = clean_company_name(org_name)
-                    clean_gbp = clean_company_name(gbp_name)
-
-                    # どちらかがどちらかの文字を含んでいれば「一致」とみなす
-                    if clean_org and clean_gbp and (clean_org in clean_gbp or clean_gbp in clean_org):
-                        is_gbp_match = True
-                    else:
-                        match_reason = f"名前不一致 (検索: {org_name} ≠ GBP: {gbp_name})"
-                else:
-                    match_reason = "GBP表示なし"
-
-                # ==========================================
-                # 💡 スプレッドシートへの書き込み（分岐）
-                #    ※ table_range='A1' を指定して、必ずA列から書き込む（列ずれ防止）
-                # ==========================================
-                now_str = time.strftime("%Y-%m-%d %H:%M:%S")
-                wrote = False
-                try:
-                    if is_gbp_match:
-                        print(f"✅ 名前が一致しました！ [GBPあり] シートに記録します。")
-                        ws_found.append_row([
-                            org_name, full_address, clean_address, gbp_name, gbp_category,
-                            gbp_address, gbp_phone, gbp_website, gbp_map_url, urls_str, now_str
-                        ], value_input_option='USER_ENTERED', table_range='A1')
-                        wrote = True
-                    else:
-                        # ==========================================
-                        # 💡 GBPなし → 1ページ目のサイトを順番に開いて電話番号を探す
-                        #    🚨 ただし「ページの会社名がCSVの顧客名と一致」したサイトの番号だけ採用する
-                        # ==========================================
-                        print(f"❌ {match_reason}。 [GBPなし]→1ページ目の全サイトから電話番号を探します。")
-
-                        first_phone = ""        # 代表として記録する電話番号（社名＋住所一致の最初の1件）
-                        verified_sites = []     # 社名・住所が一致して番号が取れたサイトの記録
-                        skipped_mismatch = 0    # 番号はあったが社名or住所不一致で除外した件数
-
-                        # --- ① 1ページ目の全サイトを「並列で」requests取得（ここが高速化の要） ---
-                        html_map = {}
-                        with ThreadPoolExecutor(max_workers=PHONE_MAX_WORKERS) as ex:
-                            future_map = {ex.submit(fetch_html, u, phone_session): u for u in search_urls}
-                            for fut in as_completed(future_map):
-                                html_map[future_map[fut]] = fut.result()
-
-                        # --- ② requestsで取れなかったサイトだけ Selenium で開き直す（保険・順次） ---
-                        #     ただしブラウザは1つしか無いので順次。負荷も考え、失敗分のみに限定。
-                        if USE_SELENIUM_FALLBACK:
-                            for u in search_urls:
-                                if not html_map.get(u):
-                                    try:
-                                        driver.get(u)
-                                        time.sleep(2)
-                                        html_map[u] = driver.page_source
-                                    except Exception:
-                                        html_map[u] = ""
-
-                        # --- ③ 検索順（=関連度順）に解析。社名＋住所が一致した番号だけ採用 ---
-                        for site_url in search_urls:
-                            res = analyze_html(html_map.get(site_url, ""), site_url, org_name, clean_address)
-
-                            if res["phone"] and res["name_matched"] and res["address_matched"]:
-                                # ✅ 社名＋住所が一致 ＆ 社名/住所の近くにある番号 → 信用して採用
-                                print(f"  ✅📞 {res['phone']}（{res['how']}） @ {site_url}")
-                                if not first_phone:
-                                    first_phone = res["phone"]
-                                verified_sites.append(
-                                    f"{res['phone']}（{res['how']}）\n  └ URL: {site_url}\n  └ ページ会社名: {res['page_title']}"
-                                )
-                            elif res["is_aggregator"]:
-                                # 🚫 媒体・ポータル・名簿系 → 運営会社の番号なので最初から対象外
-                                print(f"  🚫 媒体/ポータルのため番号取得をスキップ @ {site_url}")
-                            elif res["phone"]:
-                                # ⚠️ 番号はあるが社名or住所が一致しない → 情報不一致防止のため除外
-                                skipped_mismatch += 1
-                                ng = []
-                                if not res["name_matched"]: ng.append("社名")
-                                if not res["address_matched"]: ng.append("住所")
-                                print(f"  ⚠️ 番号あり・但し{'/'.join(ng)}不一致のため除外 @ {site_url}（ページ: {res['page_title']}）")
-                            else:
-                                print(f"  ・該当番号なし（社名/住所の近くに番号が無い） @ {site_url}")
-
-                        if first_phone:
-                            phone_mark = "📞あり（社名・住所一致）"
-                        else:
-                            phone_mark = "電話番号なし"
-                            if skipped_mismatch:
-                                phone_mark += f"（社名/住所不一致で{skipped_mismatch}件除外）"
-
-                        sites_str = "\n".join(verified_sites)
-                        print(f"  → 判定: {phone_mark}（採用サイト {len(verified_sites)}件 / 除外 {skipped_mismatch}件）")
-
-                        ws_not_found.append_row([
-                            org_name, full_address, clean_address, match_reason,
-                            phone_mark, first_phone, sites_str,
-                            urls_str, now_str
-                        ], value_input_option='USER_ENTERED', table_range='A1')
-                        wrote = True
-                except Exception as e:
-                    print(f"❌ スプレッドシートの書き込みに失敗しました: {e}")
-
-                # 💡 正常に書き込めた案件だけ「処理済み」に登録（再開時の重複防止）
-                if wrote:
-                    processed.add(key)
-
-            except Exception as e:
-                # 🚨 この案件で想定外のエラー（ブラウザのハング等）→ スキップして続行
-                print(f"⚠️ この案件でエラーのためスキップして続行します: {org_name}（{e.__class__.__name__}: {e}）")
-                if not driver_is_alive(driver):
-                    print("   🔄 ブラウザが応答しないため再起動します...")
-                    try: driver.quit()
-                    except Exception: pass
-                    driver = init_driver()
-                    wait = WebDriverWait(driver, 10)
-
-            wait_sec = random.uniform(SEARCH_DELAY_MIN, SEARCH_DELAY_MAX)
-            print(f"💤 ロボット検知を避けるため、{wait_sec:.1f}秒待機します...")
-            time.sleep(wait_sec)
-
-        print("\n✨ すべてのデータ抽出処理が完了しました！！")
+except KeyboardInterrupt:
+    print("\n🛑 Ctrl+C を検知しました。ループを停止します。（取得済みデータはシートに保存されています）")
 
 except Exception as e:
     print("\n❌ 予期せぬ重大なエラーが発生しました:")
