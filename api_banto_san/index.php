@@ -188,7 +188,7 @@ if ($route === 'scan') {
                 $say(run_scan_on_dir($gid, $path, $repo));
             } elseif ($a === 'upload_scan') {
                 $repo = trim((string) ($_POST['repo'] ?? ''));
-                $say(run_scan_on_zip($gid, $_FILES['zipfile'] ?? [], $repo));
+                $say(run_scan_on_uploads($gid, $_FILES['files'] ?? [], $repo));
             }
         } catch (Throwable $e) {
             flash('err', 'スキャンに失敗しました: ' . $e->getMessage());
@@ -666,27 +666,25 @@ function render_scan_page(array $user, array $group, int $gid): void
         </form>
     </div>
 
-    <!-- ③ ZIPアップロード（PC/Gドライブのコード） -->
+    <!-- ③ ファイルアップロード（PC/Gドライブのコード） -->
     <div class="stat" style="width:100%">
-        <h2 style="margin:0 0 8px;font-size:16px">③ ZIPをアップロードしてスキャン（PC・Gドライブのコード用）</h2>
-        <p class="hint" style="margin:0 0 10px">heteml の外（手元PCやGドライブ）にある Python 等のコードは、フォルダをZIPにしてここからアップロードするとスキャンできます。SSH・トークン不要。</p>
-        <?php if (!$zipOk): ?>
-            <div class="flash err" style="margin:0">このサーバでは ZIP 展開機能(ZipArchive)が無効のため利用できません。CLI/Pythonスキャナをご利用ください。</div>
-        <?php else: ?>
-            <form method="post" enctype="multipart/form-data">
-                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                <input type="hidden" name="action" value="upload_scan">
-                <div class="field" style="margin-bottom:8px">
-                    <input type="file" name="zipfile" accept=".zip" required style="width:100%">
-                </div>
-                <div class="field" style="margin-bottom:10px">
-                    <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">repo ラベル（任意・既定はZIP名）</label>
-                    <input name="repo" placeholder="例: gdrive-scripts" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
-                </div>
-                <button class="primary" type="submit">アップロードしてスキャン</button>
-                <span class="hint">展開上限 80MB。アップロードしたZIPは展開・解析後すぐ削除されます。</span>
-            </form>
-        <?php endif; ?>
+        <h2 style="margin:0 0 8px;font-size:16px">③ ファイルをアップロードしてスキャン（PC・Gドライブのコード用）</h2>
+        <p class="hint" style="margin:0 0 10px">heteml の外（手元PCやGドライブ）にあるコードは、ここからアップロードしてスキャンできます。SSH・トークン不要。<br>
+        <strong>.py / .php / .js などのファイルをそのまま選択OK</strong>（複数選択も可）。フォルダごとなら ZIP にまとめてアップロードしてください。</p>
+        <form method="post" enctype="multipart/form-data">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="upload_scan">
+            <div class="field" style="margin-bottom:8px">
+                <input type="file" name="files[]" multiple required style="width:100%">
+                <div class="hint"><?= $zipOk ? '.py / .php / .js / .ts などのソース、または .zip。複数まとめて選べます。' : '.py / .php / .js などのソースを選択（このサーバはZIP展開が無効のため、ZIPは使えません）。' ?></div>
+            </div>
+            <div class="field" style="margin-bottom:10px">
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">repo ラベル（任意・どこ由来か区別用）</label>
+                <input name="repo" placeholder="例: gdrive-scripts" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
+            </div>
+            <button class="primary" type="submit">アップロードしてスキャン</button>
+            <span class="hint">合計上限 80MB。アップロードしたファイルは解析後すぐ削除されます。</span>
+        </form>
     </div>
 
     <p class="hint" style="margin-top:14px">⚠ 自分が管理するコードのみをスキャンしてください。</p>

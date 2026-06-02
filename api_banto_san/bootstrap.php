@@ -855,68 +855,122 @@ function path_diagnostics(string $path): string
 }
 
 /* ------------------------------------------------------------------ *
- *  ZIP アップロードのスキャン（PC/Gドライブのコード用）
- *  アップロードされた zip を一時ディレクトリに安全に展開して走査する。
+ *  アップロードのスキャン（PC/Gドライブのコード用）
+ *  ZIP・単体ソースファイル(.py 等)・複数ファイルの混在を受け付ける。
+ *  一時ディレクトリに安全に展開/保存して走査し、最後に削除する。
  * ------------------------------------------------------------------ */
-function run_scan_on_zip(int $gid, array $file, string $repo): array
+const UPLOAD_MAX_BYTES   = 80 * 1024 * 1024;   // 合計80MB上限
+const UPLOAD_MAX_ENTRIES = 8000;
+
+/** $_FILES のエントリ（単体/複数いずれの形）を共通のリストへ正規化 */
+function normalize_uploaded_files(array $f): array
+{
+    $out = [];
+    if (!isset($f['name'])) {
+        return $out;
+    }
+    if (is_array($f['name'])) {
+        $n = count($f['name']);
+        for ($i = 0; $i < $n; $i++) {
+            if ((int) ($f['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                continue;
+            }
+            $out[] = ['name' => $f['name'][$i], 'tmp_name' => $f['tmp_name'][$i], 'error' => $f['error'][$i], 'size' => $f['size'][$i]];
+        }
+    } elseif ((int) ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+        $out[] = $f;
+    }
+    return $out;
+}
+
+/** ZIP を指定ディレクトリへ安全に展開（Zip Slip対策・サイズ上限） */
+function extract_zip_into(string $zipTmp, string $destDir, int &$totalBytes): void
 {
     if (!class_exists('ZipArchive')) {
-        throw new RuntimeException('このサーバでは ZIP 展開(ZipArchive)が使えません。CLI/Pythonスキャナをご利用ください。');
+        throw new RuntimeException('このサーバでは ZIP 展開(ZipArchive)が使えません。ZIPにせず .py 等をそのままアップロードしてください。');
     }
-    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
-        throw new RuntimeException('ファイルのアップロードに失敗しました。');
-    }
-
     $zip = new ZipArchive();
-    if ($zip->open($file['tmp_name']) !== true) {
+    if ($zip->open($zipTmp) !== true) {
         throw new RuntimeException('ZIPを開けませんでした。');
     }
+    for ($i = 0; $i < $zip->numFiles && $i < UPLOAD_MAX_ENTRIES; $i++) {
+        $st = $zip->statIndex($i);
+        if ($st === false) {
+            continue;
+        }
+        $name = str_replace('\\', '/', (string) $st['name']);
+        if ($name === '' || str_starts_with($name, '/') || preg_match('#(^|/)\.\.(/|$)#', $name)) {
+            continue;
+        }
+        $totalBytes += (int) $st['size'];
+        if ($totalBytes > UPLOAD_MAX_BYTES) {
+            $zip->close();
+            throw new RuntimeException('展開サイズが大きすぎます（上限80MB）。');
+        }
+        $dest = $destDir . '/' . $name;
+        if (str_ends_with($name, '/')) {
+            @mkdir($dest, 0700, true);
+            continue;
+        }
+        @mkdir(dirname($dest), 0700, true);
+        $stream = $zip->getStream($st['name']);
+        if ($stream) {
+            $o = fopen($dest, 'wb');
+            if ($o) {
+                stream_copy_to_stream($stream, $o);
+                fclose($o);
+            }
+            fclose($stream);
+        }
+    }
+    $zip->close();
+}
 
-    // 展開先の一時ディレクトリ
-    $tmpRoot = sys_get_temp_dir() . '/abt_scan_' . bin2hex(random_bytes(6));
+/**
+ * アップロードされたファイル群（ZIP / 単体ソース / 複数）を走査してマージ。
+ */
+function run_scan_on_uploads(int $gid, array $filesEntry, string $repo): array
+{
+    $files = normalize_uploaded_files($filesEntry);
+    if (!$files) {
+        throw new RuntimeException('ファイルが選択されていません。');
+    }
+
+    $tmpRoot = sys_get_temp_dir() . '/abt_up_' . bin2hex(random_bytes(6));
     if (!mkdir($tmpRoot, 0700, true) && !is_dir($tmpRoot)) {
         throw new RuntimeException('一時ディレクトリを作成できませんでした。');
     }
 
-    $maxEntries = 8000;
-    $maxBytes   = 80 * 1024 * 1024;   // 展開後 80MB 上限
     $totalBytes = 0;
-
+    $firstName  = '';
     try {
-        for ($i = 0; $i < $zip->numFiles && $i < $maxEntries; $i++) {
-            $st = $zip->statIndex($i);
-            if ($st === false) {
+        foreach ($files as $file) {
+            if ((int) ($file['error'] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file((string) ($file['tmp_name'] ?? ''))) {
                 continue;
             }
-            $name = (string) $st['name'];
-            // Zip Slip 対策: 絶対パス・.. を含むエントリは拒否
-            $name = str_replace('\\', '/', $name);
-            if ($name === '' || str_starts_with($name, '/') || preg_match('#(^|/)\.\.(/|$)#', $name)) {
-                continue;
+            $base = preg_replace('/[^A-Za-z0-9_.\-]/', '_', basename((string) $file['name'])) ?: 'upload';
+            if ($firstName === '') {
+                $firstName = $base;
             }
-            $totalBytes += (int) $st['size'];
-            if ($totalBytes > $maxBytes) {
-                throw new RuntimeException('展開サイズが大きすぎます（上限80MB）。CLI/Pythonスキャナをご利用ください。');
-            }
-            $dest = $tmpRoot . '/' . $name;
-            if (str_ends_with($name, '/')) {
-                @mkdir($dest, 0700, true);
-                continue;
-            }
-            @mkdir(dirname($dest), 0700, true);
-            $stream = $zip->getStream($st['name']);
-            if ($stream) {
-                $out = fopen($dest, 'wb');
-                if ($out) {
-                    stream_copy_to_stream($stream, $out);
-                    fclose($out);
+            if (preg_match('/\.zip$/i', $base)) {
+                $sub = $tmpRoot . '/' . preg_replace('/\.zip$/i', '', $base);
+                @mkdir($sub, 0700, true);
+                extract_zip_into((string) $file['tmp_name'], $sub, $totalBytes);
+            } else {
+                $totalBytes += (int) ($file['size'] ?? 0);
+                if ($totalBytes > UPLOAD_MAX_BYTES) {
+                    throw new RuntimeException('合計サイズが大きすぎます（上限80MB）。');
                 }
-                fclose($stream);
+                $dst = $tmpRoot . '/' . $base;
+                if (!move_uploaded_file((string) $file['tmp_name'], $dst)) {
+                    @copy((string) $file['tmp_name'], $dst);
+                }
             }
         }
-        $zip->close();
 
-        $label = $repo !== '' ? $repo : preg_replace('/\.zip$/i', '', (string) ($file['name'] ?? 'upload'));
+        $label = $repo !== ''
+            ? $repo
+            : (count($files) === 1 ? preg_replace('/\.zip$/i', '', $firstName) : 'upload');
         $providers = load_providers(__DIR__ . '/scanner/providers.json');
         $found = scan_directory($tmpRoot, $providers, ['repo' => $label]);
         $res = merge_scan_results($gid, $found);
