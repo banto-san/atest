@@ -58,6 +58,16 @@ function abt_providers(): array
             'sdk'=>['@line/bot-sdk','linebot','LINE\\'],'host'=>['api.line.me'],'env'=>['LINE_CHANNEL_ACCESS_TOKEN','LINE_CHANNEL_SECRET']],
         ['name'=>'Slack','default_api_name'=>'Slack API','docs_url'=>'https://api.slack.com/',
             'sdk'=>['@slack/','slack-sdk'],'host'=>['slack.com/api','hooks.slack.com'],'env'=>['SLACK_BOT_TOKEN','SLACK_WEBHOOK_URL','SLACK_SIGNING_SECRET']],
+        ['name'=>'Google AI Studio','default_api_name'=>'Google AI Studio (Gemini)','docs_url'=>'https://ai.google.dev/',
+            'sdk'=>['@google/generative-ai','google.generativeai','google-generativeai','GenerativeModel'],'host'=>['generativelanguage.googleapis.com'],'env'=>['GEMINI_API_KEY','GOOGLE_AI_API_KEY','GOOGLE_GENAI_API_KEY']],
+        ['name'=>'Azure','default_api_name'=>'Microsoft Azure','docs_url'=>'https://learn.microsoft.com/azure/',
+            'sdk'=>['@azure/','azure-','msrestazure'],'host'=>['azure.com','cognitiveservices.azure.com','openai.azure.com','azurewebsites.net'],'env'=>['AZURE_CLIENT_ID','AZURE_CLIENT_SECRET','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID','AZURE_OPENAI_API_KEY','AZURE_OPENAI_ENDPOINT']],
+        ['name'=>'DataForSEO','default_api_name'=>'DataForSEO','docs_url'=>'https://docs.dataforseo.com/',
+            'sdk'=>['dataforseo'],'host'=>['api.dataforseo.com'],'env'=>['DATAFORSEO_LOGIN','DATAFORSEO_PASSWORD','DATAFORSEO_API_KEY']],
+        ['name'=>'HERE','default_api_name'=>'HERE Location Services','docs_url'=>'https://developer.here.com/documentation',
+            'sdk'=>['@here/','heremaps'],'host'=>['hereapi.com','api.here.com'],'env'=>['HERE_API_KEY','HERE_APP_ID','HERE_APP_CODE']],
+        ['name'=>'TomTom','default_api_name'=>'TomTom','docs_url'=>'https://developer.tomtom.com/',
+            'sdk'=>['@tomtom-international/','tomtom'],'host'=>['api.tomtom.com'],'env'=>['TOMTOM_API_KEY']],
     ];
 }
 
