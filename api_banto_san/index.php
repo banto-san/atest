@@ -285,6 +285,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($nm !== '') { set_group_position($gid, $nm, $i++); }
             }
         }
+        if (!empty($_POST['ajax'])) {
+            header('Content-Type: application/json');
+            echo '{"ok":true}';
+            exit;
+        }
         redirect(app_url());
     }
 
@@ -497,6 +502,11 @@ function render_styles(): void { ?>
     .drag-handle { cursor:grab; color:#94a3b8; margin-right:4px; user-select:none; }
     tr.group-head.dragging td { opacity:.4; }
     tr.group-head[draggable="true"] { cursor:grab; }
+    tr.group-head.drop-before td { box-shadow: inset 0 3px 0 0 var(--accent); }
+    tr.group-head.drop-after  td { box-shadow: inset 0 -3px 0 0 var(--accent); }
+    #abtToast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0f172a; color:#fff;
+        padding:9px 18px; border-radius:10px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:9999; }
+    #abtToast.show { opacity:.95; }
     td.group-cost { font-size:16px; font-weight:700; color:#0f172a; white-space:nowrap; }
     .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--line); border-radius:12px; }
     .table-wrap table { border:none; border-radius:0; min-width:600px; }
@@ -931,8 +941,8 @@ function render_scan_page(array $user, array $group, int $gid): void
                 : '—';
             $restcol = $colspan - 4;
         ?>
-            <tr class="group-head" data-name="<?= h($gname) ?>" onclick="toggleGroup(<?= $gi ?>)"
-                <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event)" ondrop="gDrop(event,this)"' : '' ?>>
+            <tr class="group-head" data-name="<?= h($gname) ?>" data-gi="<?= $gi ?>" onclick="toggleGroup(<?= $gi ?>)"
+                <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event,this)" ondragleave="gDragLeave(this)" ondrop="gDrop(event,this)"' : '' ?>>
                 <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え">⠿</span><?php endif; ?><span id="gtg<?= $gi ?>" class="caret">▶</span></td>
                 <td colspan="2">
                     🔷 <strong><?= h($gname) ?></strong>
@@ -1053,6 +1063,7 @@ function render_scan_page(array $user, array $group, int $gid): void
         スキャナ連携・各社billing API連携は将来フェーズ（仕様書 §6,§9）。
     </p>
 </div>
+<div id="abtToast"></div>
 
 <?php if ($editable): ?>
 <!-- 追加 / 編集モーダル -->
@@ -1114,26 +1125,52 @@ function render_scan_page(array $user, array $group, int $gid): void
 </script>
 <?php endif; ?>
 <script>
-    // ---- ドラッグ＆ドロップ並べ替え（PC） ----
+    // ---- ドラッグ＆ドロップ並べ替え（PC、リロードなし） ----
     const ABT_CSRF = '<?= h($csrf) ?>';
-    let abtDragRow = null;
-    function gDragStart(e, el) { abtDragRow = el; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); }
-    function gDragEnd(el) { el.classList.remove('dragging'); }
-    function gDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+    let abtDrag = null;
+    function gDragStart(e, el) { abtDrag = el; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); }
+    function gDragEnd(el) { el.classList.remove('dragging'); clearDropMarks(); }
+    function clearDropMarks() { document.querySelectorAll('.drop-before,.drop-after').forEach(r => r.classList.remove('drop-before', 'drop-after')); }
+    function gDragLeave(el) { el.classList.remove('drop-before', 'drop-after'); }
+    function gDragOver(e, el) {
+        if (!abtDrag || abtDrag === el) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = el.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height / 2;
+        el.classList.remove('drop-before', 'drop-after');
+        el.classList.add(after ? 'drop-after' : 'drop-before');
+    }
+    function groupRows(gi) {
+        return [document.querySelector('tr.group-head[data-gi="' + gi + '"]'),
+                ...document.querySelectorAll('.g' + gi + '-row, .g' + gi + '-use')];
+    }
     function gDrop(e, el) {
         e.preventDefault();
-        if (!abtDragRow || abtDragRow === el) return;
+        clearDropMarks();
+        if (!abtDrag || abtDrag === el) return;
         const tbody = el.parentNode;
         const rect = el.getBoundingClientRect();
         const after = (e.clientY - rect.top) > rect.height / 2;
-        tbody.insertBefore(abtDragRow, after ? el.nextSibling : el);
-        const names = Array.from(tbody.querySelectorAll('tr.group-head')).map(r => r.getAttribute('data-name'));
-        const f = document.createElement('form');
-        f.method = 'post'; f.action = 'index.php';
-        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
-        add('csrf', ABT_CSRF); add('action', 'reorder_set');
-        names.forEach(n => add('names[]', n));
-        document.body.appendChild(f); f.submit();
+        const tgi = el.getAttribute('data-gi');
+        const tRows = groupRows(tgi);
+        const ref = after ? (tRows[tRows.length - 1].nextElementSibling) : el;
+        groupRows(abtDrag.getAttribute('data-gi')).forEach(r => { if (r) tbody.insertBefore(r, ref); });
+        saveOrder();
+    }
+    function saveOrder() {
+        const names = Array.from(document.querySelectorAll('tr.group-head')).map(r => r.getAttribute('data-name'));
+        const body = new URLSearchParams();
+        body.append('csrf', ABT_CSRF); body.append('action', 'reorder_set'); body.append('ajax', '1');
+        names.forEach(n => body.append('names[]', n));
+        fetch('index.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+            .then(r => abtToast(r.ok ? '並び順を保存しました' : '保存に失敗しました'))
+            .catch(() => abtToast('保存に失敗しました'));
+    }
+    function abtToast(msg) {
+        const t = document.getElementById('abtToast'); if (!t) return;
+        t.textContent = msg; t.classList.add('show');
+        clearTimeout(t._tid); t._tid = setTimeout(() => t.classList.remove('show'), 1500);
     }
 
     function toggleGroup(gi) {
