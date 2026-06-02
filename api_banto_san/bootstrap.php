@@ -252,6 +252,18 @@ function db(): PDO
         )
     SQL);
 
+    // 保存済みスキャン対象（option 1: ワンクリック再スキャン用）
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS scan_targets (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id        INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            label           TEXT    NOT NULL DEFAULT '',
+            path            TEXT    NOT NULL,
+            last_scanned_at TEXT,
+            created_at      TEXT    NOT NULL
+        )
+    SQL);
+
     // v1（グループ無し）DB からのマイグレーション: apis.group_id を後付け。
     $cols = $pdo->query('PRAGMA table_info(apis)')->fetchAll();
     $hasGroup = false;
@@ -757,4 +769,141 @@ function merge_scan_results(int $gid, array $apis): array
     }
 
     return ['created' => $created, 'updated' => $updated, 'usages' => $usageCount];
+}
+
+/* ------------------------------------------------------------------ *
+ *  保存済みスキャン対象（option 1）
+ * ------------------------------------------------------------------ */
+function list_scan_targets(int $gid): array
+{
+    $stmt = db()->prepare('SELECT * FROM scan_targets WHERE group_id = :g ORDER BY label, id');
+    $stmt->execute([':g' => $gid]);
+    return $stmt->fetchAll();
+}
+
+function add_scan_target(int $gid, string $label, string $path): void
+{
+    db()->prepare('INSERT INTO scan_targets (group_id, label, path, created_at) VALUES (:g,:l,:p,:c)')
+        ->execute([':g' => $gid, ':l' => $label, ':p' => $path, ':c' => now()]);
+}
+
+function delete_scan_target(int $gid, int $id): void
+{
+    db()->prepare('DELETE FROM scan_targets WHERE id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
+}
+
+function touch_scan_target(int $id): void
+{
+    db()->prepare('UPDATE scan_targets SET last_scanned_at = :t WHERE id = :id')->execute([':t' => now(), ':id' => $id]);
+}
+
+/* ------------------------------------------------------------------ *
+ *  スキャン実行（ディレクトリ）— in-app スキャンの共通処理
+ *  SCAN_ALLOWED_ROOT が設定されていればその配下のみ許可。
+ *  戻り値: merge_scan_results の結果
+ * ------------------------------------------------------------------ */
+function run_scan_on_dir(int $gid, string $path, string $repo): array
+{
+    $real = $path !== '' ? realpath($path) : false;
+    if ($real === false || !is_dir($real)) {
+        throw new RuntimeException('ディレクトリが見つかりません: ' . $path);
+    }
+    $allowedRoot = config('SCAN_ALLOWED_ROOT');
+    if ($allowedRoot) {
+        $rootReal = realpath((string) $allowedRoot);
+        if ($rootReal === false || strncmp($real, $rootReal, strlen($rootReal)) !== 0) {
+            throw new RuntimeException('そのパスはスキャン許可ディレクトリ(SCAN_ALLOWED_ROOT)の外です。');
+        }
+    }
+    $providers = load_providers(__DIR__ . '/scanner/providers.json');
+    $found = scan_directory($real, $providers, ['repo' => ($repo !== '' ? $repo : basename($real))]);
+    return merge_scan_results($gid, $found);
+}
+
+/* ------------------------------------------------------------------ *
+ *  ZIP アップロードのスキャン（PC/Gドライブのコード用）
+ *  アップロードされた zip を一時ディレクトリに安全に展開して走査する。
+ * ------------------------------------------------------------------ */
+function run_scan_on_zip(int $gid, array $file, string $repo): array
+{
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('このサーバでは ZIP 展開(ZipArchive)が使えません。CLI/Pythonスキャナをご利用ください。');
+    }
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
+        throw new RuntimeException('ファイルのアップロードに失敗しました。');
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($file['tmp_name']) !== true) {
+        throw new RuntimeException('ZIPを開けませんでした。');
+    }
+
+    // 展開先の一時ディレクトリ
+    $tmpRoot = sys_get_temp_dir() . '/abt_scan_' . bin2hex(random_bytes(6));
+    if (!mkdir($tmpRoot, 0700, true) && !is_dir($tmpRoot)) {
+        throw new RuntimeException('一時ディレクトリを作成できませんでした。');
+    }
+
+    $maxEntries = 8000;
+    $maxBytes   = 80 * 1024 * 1024;   // 展開後 80MB 上限
+    $totalBytes = 0;
+
+    try {
+        for ($i = 0; $i < $zip->numFiles && $i < $maxEntries; $i++) {
+            $st = $zip->statIndex($i);
+            if ($st === false) {
+                continue;
+            }
+            $name = (string) $st['name'];
+            // Zip Slip 対策: 絶対パス・.. を含むエントリは拒否
+            $name = str_replace('\\', '/', $name);
+            if ($name === '' || str_starts_with($name, '/') || preg_match('#(^|/)\.\.(/|$)#', $name)) {
+                continue;
+            }
+            $totalBytes += (int) $st['size'];
+            if ($totalBytes > $maxBytes) {
+                throw new RuntimeException('展開サイズが大きすぎます（上限80MB）。CLI/Pythonスキャナをご利用ください。');
+            }
+            $dest = $tmpRoot . '/' . $name;
+            if (str_ends_with($name, '/')) {
+                @mkdir($dest, 0700, true);
+                continue;
+            }
+            @mkdir(dirname($dest), 0700, true);
+            $stream = $zip->getStream($st['name']);
+            if ($stream) {
+                $out = fopen($dest, 'wb');
+                if ($out) {
+                    stream_copy_to_stream($stream, $out);
+                    fclose($out);
+                }
+                fclose($stream);
+            }
+        }
+        $zip->close();
+
+        $label = $repo !== '' ? $repo : preg_replace('/\.zip$/i', '', (string) ($file['name'] ?? 'upload'));
+        $providers = load_providers(__DIR__ . '/scanner/providers.json');
+        $found = scan_directory($tmpRoot, $providers, ['repo' => $label]);
+        $res = merge_scan_results($gid, $found);
+    } finally {
+        rrmdir($tmpRoot);
+    }
+    return $res;
+}
+
+/** ディレクトリを再帰削除 */
+function rrmdir(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+    $items = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($items as $item) {
+        $item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+    }
+    @rmdir($dir);
 }
