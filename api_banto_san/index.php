@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * API番人さん (api_banto_san) — API棚卸しツール
+ * API番頭さん (api_banto_san) — API棚卸しツール
  * --------------------------------------------------------------------------
  * Googleログイン + グループ/ロール権限つきの「コスト軸ダッシュボード」。
  *
@@ -776,10 +776,11 @@ function is_key_def_usage(array $u): bool
 
 /** 共通スタイル */
 function render_styles(): void { ?>
+<link rel="icon" type="image/svg+xml" href="<?= h(app_base_url()) ?>/favicon.svg">
 <style>
     :root {
         --bg:#eef1f6; --card:#fff; --line:#e8ebf0; --ink:#1f2733;
-        --muted:#8a93a0; --accent:#2f6bff; --accent-d:#1d4ed8;
+        --muted:#8a93a0; --accent:#1f3a8a; --accent-d:#162c66; --gold:#e0a93b;
         --ok-bg:#e7f6ec; --ok-ink:#1a7f43; --err-bg:#fdecec; --err-ink:#b42318;
         --radius:16px; --shadow:0 6px 24px rgba(31,41,55,.06);
     }
@@ -790,11 +791,14 @@ function render_styles(): void { ?>
     /* ===== モダン・サイドバー レイアウト（ダッシュボード用） ===== */
     .layout { display:flex; min-height:100vh; }
     .sidebar { width:218px; flex:0 0 218px; background:#fff; border-right:1px solid var(--line); padding:18px 14px; position:sticky; top:0; height:100vh; overflow:auto; }
-    .sidebar .brand { display:flex; align-items:center; gap:8px; font-weight:800; font-size:17px; padding:6px 8px 16px; }
+    .sidebar .brand { display:flex; align-items:center; gap:8px; font-weight:800; font-size:17px; padding:10px 10px 14px; margin-bottom:6px;
+        color:#fff; background:var(--accent); border-radius:12px;
+        border-bottom:5px solid; border-image:repeating-linear-gradient(90deg,#e0a93b 0 14px,#fff 14px 28px) 1; }
+    .sidebar .brand .ic { color:var(--gold); }
     .sidebar .navlabel { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; padding:14px 10px 6px; }
     .sidebar a.nav { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; color:#46505e; text-decoration:none; font-size:14px; font-weight:600; margin-bottom:2px; }
     .sidebar a.nav:hover { background:#f3f5f9; color:var(--ink); }
-    .sidebar a.nav.active { background:var(--accent); color:#fff; box-shadow:0 6px 16px rgba(47,107,255,.35); }
+    .sidebar a.nav.active { background:var(--accent); color:#fff; box-shadow:0 6px 16px rgba(31,58,138,.30); }
     .sidebar .who { display:flex; align-items:center; gap:8px; font-size:13px; padding:10px 8px; border-top:1px solid var(--line); margin-top:14px; }
     .sidebar .who img { width:30px; height:30px; border-radius:50%; }
     .main { flex:1; min-width:0; padding:22px 26px; }
@@ -822,7 +826,8 @@ function render_styles(): void { ?>
 
     /* ===== ヒーロー（全体サマリ）＋ ドーナツ ===== */
     .hero { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
-    .hero-main { flex:1 1 320px; background:linear-gradient(135deg,#1f2a44,#2f6bff); color:#fff;
+    .hero-main { flex:1 1 320px; background:linear-gradient(135deg,#14245c,#1f3a8a 60%,#2a4fb0); color:#fff;
+        border-top:4px solid var(--gold);
         border-radius:var(--radius); padding:22px 24px; box-shadow:var(--shadow); display:flex; flex-direction:column; }
     .hero-label { font-size:12px; letter-spacing:.04em; opacity:.85; }
     .hero-chart .hero-label { color:var(--muted); opacity:1; }
@@ -952,7 +957,7 @@ function render_login_page(): void
 <title><?= h(APP_NAME) ?> — ログイン</title>
 <?php render_styles(); ?>
 </head><body>
-<header class="app"><h1><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">API棚卸しダッシュボード</span></header>
+<header class="app"><h1><?= icon('onsen', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">API棚卸しダッシュボード</span></header>
 <div class="wrap">
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
     <div class="login-box">
@@ -999,7 +1004,7 @@ function render_tokens_page(array $user): void
 <?php render_styles(); ?>
 </head><body>
 <header class="app">
-    <h1><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">個人用トークン</span>
+    <h1><?= icon('onsen', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">個人用トークン</span>
     <span class="spacer"></span>
     <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
@@ -1080,7 +1085,7 @@ function render_scan_page(array $user, array $group, int $gid): void
 <?php render_styles(); ?>
 </head><body>
 <header class="app">
-    <h1><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">スキャン — <?= h($group['name']) ?></span>
+    <h1><?= icon('onsen', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">スキャン — <?= h($group['name']) ?></span>
     <span class="spacer"></span>
     <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
@@ -1274,28 +1279,9 @@ function render_modals(string $csrf, array $names, array $credentials): void
                     <div class="hint">この箱がどのAPI（プロダクト）の下に表示されるか。</div>
                 </div>
                 <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
-                    <label>使うキー（コスト取得）</label>
-                    <select name="credential_id" id="pf_cred" onchange="pfCredChange()">
-                        <option value="">（プロダクトの既定キーを使う）</option>
-                        <?php foreach ($credentials as $cr): ?>
-                            <option value="<?= (int) $cr['id'] ?>"><?= h($cr['name']) ?>（<?= h($cr['cost_type'] !== '' ? strtoupper($cr['cost_type']) : '種別なし') ?>）</option>
-                        <?php endforeach; ?>
-                        <option value="direct">この箱に直接入力</option>
-                    </select>
-                    <div class="hint">登録済みキーを選ぶか、プロダクトの既定キーを継承。個別に入れたい時だけ「直接入力」。<a href="index.php#credpanel">キーを管理</a></div>
-                </div>
-                <div class="field full" id="pf_proj_wrap"><label>OpenAI プロジェクトID（任意・この箱だけ絞り込み）</label><input name="openai_project_id" id="pf_proj" placeholder="proj_xxxxx（空＝キー既定 / 組織全体）"></div>
-                <div id="pf_direct_wrap" style="display:none">
-                    <div class="field full">
-                        <label>コスト自動取得の種別（直接入力時）</label>
-                        <select name="cost_type" id="pf_cost_type" onchange="pfCostTypeChange()">
-                            <option value="">なし（手入力）</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="twilio">Twilio</option>
-                        </select>
-                    </div>
-                    <div class="field full" id="pf_acct_wrap" style="display:none"><label id="pf_acct_label">アカウントID</label><input name="cost_account" id="pf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
-                    <div class="field full"><label><?= icon('lock', 15) ?> キー / トークン（コスト取得用・暗号化保存）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="pf_secret_state"></div></div>
+                    <label>識別子（プロジェクトID等・任意）</label>
+                    <input name="openai_project_id" id="pf_proj" placeholder="OpenAI: proj_xxxxx（空＝組織全体）">
+                    <div class="hint">コスト取得キーは<strong>プロダクトの既定キー</strong>を使います。この箱だけのID（OpenAIのプロジェクトID等）があれば入力。<a href="index.php#credpanel">キーを管理</a></div>
                 </div>
                 <div class="field"><label>月額（手入力・任意）</label><input name="monthly_cost" id="pf_cost" type="number" step="0.01" min="0" placeholder="自動取得しない場合"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="pf_currency"><?php foreach (['USD','JPY','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
@@ -1337,51 +1323,17 @@ function render_modals(string $csrf, array $names, array $credentials): void
     </form>
 </dialog>
 <script>
-    const ABT_CREDS = <?= json_encode(array_map(static fn($c) => ['id' => (int) $c['id'], 'name' => $c['name'], 'type' => $c['cost_type']], $credentials), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?: '[]' ?>;
     const projDialog = document.getElementById('projDialog');
     const credDialog = document.getElementById('credDialog');
-    function pfCostTypeChange() {
-        const t = document.getElementById('pf_cost_type').value;
-        const aw = document.getElementById('pf_acct_wrap');
-        aw.style.display = (t === 'twilio') ? '' : 'none';
-        if (t === 'twilio') { document.getElementById('pf_acct_label').textContent = 'Twilio Account SID'; }
-        pfProjVisibility();
-    }
-    // 使うキー選択で、直接入力欄／OpenAI projectID欄の表示を切り替え
-    function pfCredChange() {
-        const v = document.getElementById('pf_cred').value;
-        document.getElementById('pf_direct_wrap').style.display = (v === 'direct') ? '' : 'none';
-        pfProjVisibility();
-    }
-    function pfEffectiveType() {
-        const v = document.getElementById('pf_cred').value;
-        if (v === 'direct') { return document.getElementById('pf_cost_type').value; }
-        if (v === '') { return ''; }   // 継承（種別はプロダクト側のキー依存）→ProjID欄は出す
-        const cr = ABT_CREDS.find(c => String(c.id) === v);
-        return cr ? cr.type : '';
-    }
-    function pfProjVisibility() {
-        const v = document.getElementById('pf_cred').value;
-        const t = pfEffectiveType();
-        // OpenAI（または継承＝種別不明）のときに projectID 絞り込みを出す
-        const show = (t === 'openai') || (v === '');
-        document.getElementById('pf_proj_wrap').style.display = show ? '' : 'none';
-    }
     function openProject(p) {
         p = p || {};
         document.getElementById('projModalTitle').textContent = p.id ? 'プロジェクト箱を編集' : 'プロジェクト箱を追加';
         document.getElementById('pf_id').value = p.id ?? '';
         document.getElementById('pf_name').value = p.name ?? '';
         document.getElementById('pf_product').value = p.product ?? '';
-        document.getElementById('pf_cred').value = (p.credential_id === null || p.credential_id === undefined || p.credential_id === '') ? '' : String(p.credential_id);
-        document.getElementById('pf_cost_type').value = p.cost_type ?? '';
-        document.getElementById('pf_acct').value = p.cost_account ?? '';
         document.getElementById('pf_proj').value = p.openai_project_id ?? '';
-        pfCredChange();
         document.getElementById('pf_cost').value = (p.monthly_cost === null || p.monthly_cost === undefined) ? '' : p.monthly_cost;
         document.getElementById('pf_currency').value = p.currency || 'USD';
-        document.getElementById('pf_secret').value = '';
-        document.getElementById('pf_secret_state').textContent = p.secret_hint ? ('現在: ' + p.secret_hint + '（変更時のみ入力）') : '直接入力時のみ';
         projDialog.showModal();
     }
     function cfTypeChange() {
@@ -1513,7 +1465,7 @@ if ($route === 'product'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand"><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></div>
+    <div class="brand"><?= icon('onsen', 20) ?> <?= h(APP_NAME) ?></div>
     <div class="navlabel">メニュー</div>
     <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
@@ -1706,7 +1658,7 @@ if ($route === 'product'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand"><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></div>
+    <div class="brand"><?= icon('onsen', 20) ?> <?= h(APP_NAME) ?></div>
     <div class="navlabel">メニュー</div>
     <a class="nav active" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
