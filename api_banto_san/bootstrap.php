@@ -128,7 +128,7 @@ function icon(string $name, int $size = 18): string
 {
     static $paths = [
         'shield'    => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
-        'onsen'     => '<path d="M3 14h18a9 9 0 0 1-18 0z"/><path d="M8 10c-1.5-1.5-1.5-3 0-4.5"/><path d="M12 10c-1.5-1.5-1.5-3 0-4.5"/><path d="M16 10c-1.5-1.5-1.5-3 0-4.5"/>',
+        'noren'     => '<line x1="2.5" y1="6" x2="21.5" y2="6"/><path d="M4.5 6V19H19.5V6"/><line x1="9.5" y1="19" x2="9.5" y2="12"/><line x1="14.5" y1="19" x2="14.5" y2="12"/><circle cx="12" cy="11" r="1.7"/>',
         'dashboard' => '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
         'search'    => '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
         'key'       => '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',

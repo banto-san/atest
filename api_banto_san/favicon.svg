@@ -1,15 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="14" fill="#1f3a8a"/>
-  <!-- 暖簾の裾（noren） -->
-  <rect x="10" y="44" width="44" height="12" rx="2" fill="#e9eefb"/>
-  <rect x="22" y="44" width="3" height="12" fill="#1f3a8a"/>
-  <rect x="39" y="44" width="3" height="12" fill="#1f3a8a"/>
-  <!-- 湯（bowl） -->
-  <path d="M16 38 a16 7 0 0 0 32 0 z" fill="#ffce6b"/>
-  <!-- 湯気（steam ♨） -->
-  <g fill="none" stroke="#ffce6b" stroke-width="3.4" stroke-linecap="round">
-    <path d="M24 32 q-4 -5 0 -10 q4 -5 0 -10"/>
-    <path d="M32 32 q-4 -5 0 -10 q4 -5 0 -10"/>
-    <path d="M40 32 q-4 -5 0 -10 q4 -5 0 -10"/>
+  <!-- 突っ張り棒（rod） -->
+  <rect x="8" y="15" width="48" height="5" rx="2.5" fill="#e0a93b"/>
+  <!-- 暖簾の布（noren panels） -->
+  <g fill="#eef1fb">
+    <path d="M12 20 h12 v30 h-12 z"/>
+    <path d="M26 20 h12 v32 h-12 z"/>
+    <path d="M40 20 h12 v30 h-12 z"/>
+  </g>
+  <!-- 中央パネルの「湯」紋（crest） -->
+  <circle cx="32" cy="34" r="6" fill="none" stroke="#1f3a8a" stroke-width="2.6"/>
+  <g fill="none" stroke="#1f3a8a" stroke-width="2" stroke-linecap="round">
+    <path d="M30 32.5 q-1.5 -1.8 0 -3.6"/>
+    <path d="M32 32.5 q-1.5 -1.8 0 -3.6"/>
+    <path d="M34 32.5 q-1.5 -1.8 0 -3.6"/>
   </g>
 </svg>

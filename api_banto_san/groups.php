@@ -236,7 +236,7 @@ function gstyles(): void { ?>
 </head>
 <body>
 <header class="app">
-    <h1><?= icon('onsen', 20) ?> <?= h(APP_NAME) ?></h1>
+    <h1><?= icon('noren', 20) ?> <?= h(APP_NAME) ?></h1>
     <span style="font-size:13px;color:#94a3b8">グループ管理</span>
     <span class="spacer"></span>
     <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
