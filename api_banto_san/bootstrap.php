@@ -595,6 +595,27 @@ function create_project(int $gid, string $name, string $projId, string $product 
     return (int) db()->lastInsertId();
 }
 
+/** プロダクト名(API名)の api 行を1つ返す。無ければ作成して id を返す。 */
+function find_or_create_api(int $gid, string $product, string $provider = ''): int
+{
+    $st = db()->prepare('SELECT id FROM apis WHERE group_id = :g AND name = :n ORDER BY id LIMIT 1');
+    $st->execute([':g' => $gid, ':n' => $product]);
+    $id = $st->fetchColumn();
+    if ($id) { return (int) $id; }
+    db()->prepare('INSERT INTO apis (group_id, name, provider, created_at, updated_at) VALUES (:g,:n,:p,:c,:c)')
+        ->execute([':g' => $gid, ':n' => $product, ':p' => $provider, ':c' => now()]);
+    return (int) db()->lastInsertId();
+}
+
+/** 箱に「サイト(URL)」を手動で1件追加する。戻り値は usage id。 */
+function add_manual_site(int $gid, int $projectId, string $product, string $site): int
+{
+    $apiId = find_or_create_api($gid, $product);
+    db()->prepare('INSERT INTO usages (api_id, repo, file, line, snippet, project_id) VALUES (:a,:r,:f,NULL,:s,:p)')
+        ->execute([':a' => $apiId, ':r' => $site, ':f' => $site, ':s' => '（手動登録）', ':p' => $projectId]);
+    return (int) db()->lastInsertId();
+}
+
 /** URL(usage) 群を箱へ移動（null で未割当に戻す）。現在グループのusageのみ。 */
 function assign_usages_to_project(int $gid, array $usageIds, ?int $projectId): int
 {

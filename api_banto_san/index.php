@@ -324,6 +324,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'add_site') {
+        require_role_at_least($gid, 'member');
+        $proj = get_project($gid, (int) ($_POST['project_id'] ?? 0));
+        $site = trim((string) ($_POST['site'] ?? ''));
+        if (!$proj) { flash('err', '箱が見つかりません。'); }
+        elseif ($site === '') { flash('err', 'サイト名を入力してください。'); }
+        elseif (trim((string) $proj['product']) === '') { flash('err', '先に箱のプロダクト（API）を設定してください。'); }
+        else {
+            add_manual_site($gid, (int) $proj['id'], trim((string) $proj['product']), $site);
+            flash('ok', 'サイト「' . $site . '」を箱「' . $proj['name'] . '」に追加しました。');
+        }
+        redirect_self();
+    }
+
     if ($action === 'save_project') {
         require_role_at_least($gid, 'member');
         $pidIn = isset($_POST['project_id']) && $_POST['project_id'] !== '' ? (int) $_POST['project_id'] : null;
@@ -1343,9 +1357,37 @@ function render_modals(string $csrf, array $names, array $credentials): void
         </div>
     </form>
 </dialog>
+
+<!-- サイトを箱に手動追加 -->
+<dialog id="siteDialog">
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="add_site">
+        <input type="hidden" name="project_id" id="sf_pid" value="">
+        <div class="modal-head">サイトを追加</div>
+        <div class="modal-body">
+            <div class="hint" id="sf_box" style="margin-bottom:8px"></div>
+            <div class="field"><label>サイト名 <span style="color:#b42318">*</span></label>
+                <input name="site" id="sf_site" required placeholder="例: shopA / shopA/app">
+                <div class="hint">この箱に手動でサイト（URL）を1件追加します。スラッシュを含めると先頭がサイト名になります。</div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('siteDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">追加</button>
+        </div>
+    </form>
+</dialog>
 <script>
     const projDialog = document.getElementById('projDialog');
     const credDialog = document.getElementById('credDialog');
+    const siteDialog = document.getElementById('siteDialog');
+    function openSite(pid, boxName) {
+        document.getElementById('sf_pid').value = pid;
+        document.getElementById('sf_site').value = '';
+        document.getElementById('sf_box').textContent = '箱: ' + (boxName || '');
+        siteDialog.showModal();
+    }
     function openProject(p) {
         p = p || {};
         document.getElementById('projModalTitle').textContent = p.id ? 'プロジェクト箱を編集' : 'プロジェクト箱を追加';
@@ -1516,6 +1558,7 @@ if ($route === 'manage'):
                         <?php if (($p['cost_type'] ?? '') !== '' || trim((string) $p['openai_project_id']) !== '' || ($p['credential_id'] ?? null) || isset($prodCredSet[(string) ($p['product'] ?? '')])): ?>
                         <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link" type="submit"><?= icon('refresh', 15) ?> コスト</button></form>
                         <?php endif; ?>
+                        <button class="link" type="button" onclick='openSite(<?= (int)$p["id"] ?>, <?= json_encode($p["name"], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>＋サイト</button>
                         <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"product"=>$p["product"] ?? "","cost_type"=>$p["cost_type"] ?? "","cost_account"=>$p["cost_account"] ?? "","openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"],"credential_id"=>$p["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                         <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
                     </td>
@@ -1717,6 +1760,7 @@ if ($route === 'product'):
                         <?php if (($b['cost_type'] ?? '') !== '' || trim((string) $b['openai_project_id']) !== '' || ($b['credential_id'] ?? null) || $pCredId !== null): ?>
                         <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $b['id'] ?>"><button class="link" type="submit" title="コスト取得"><?= icon('refresh', 15) ?> コスト</button></form>
                         <?php endif; ?>
+                        <button class="link" type="button" onclick='openSite(<?= (int)$b["id"] ?>, <?= json_encode($b["name"], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>＋サイト</button>
                         <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$b["id"],"name"=>$b["name"],"product"=>$b["product"] ?? "","cost_type"=>$b["cost_type"] ?? "","cost_account"=>$b["cost_account"] ?? "","openai_project_id"=>$b["openai_project_id"],"secret_hint"=>$b["secret_hint"],"monthly_cost"=>$b["monthly_cost"],"currency"=>$b["currency"],"credential_id"=>$b["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($b['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $b['id'] ?>"><button class="link danger" type="submit">削除</button></form>
                     </td>
@@ -2016,6 +2060,7 @@ if ($route === 'product'):
                         <?php if (($proj['cost_type'] ?? '') !== '' || trim((string) $proj['openai_project_id']) !== '' || ($proj['credential_id'] ?? null) || isset($prodCredSet[(string) ($proj['product'] ?? '')])): ?>
                         <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link" type="submit" title="コスト取得"><?= icon('refresh', 15) ?> コスト</button></form>
                         <?php endif; ?>
+                        <button class="link" type="button" onclick='openSite(<?= (int)$proj["id"] ?>, <?= json_encode($proj["name"], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>＋サイト</button>
                         <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$proj["id"],"name"=>$proj["name"],"product"=>$proj["product"],"cost_type"=>$proj["cost_type"] ?? "","cost_account"=>$proj["cost_account"] ?? "","openai_project_id"=>$proj["openai_project_id"],"secret_hint"=>$proj["secret_hint"],"monthly_cost"=>$proj["monthly_cost"],"currency"=>$proj["currency"],"credential_id"=>$proj["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>箱を編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($proj['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link danger" type="submit">箱削除</button></form>
                     <?php endif; ?>
