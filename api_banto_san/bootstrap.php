@@ -550,15 +550,26 @@ function cost_twilio(string $sid, string $token): array
     $url = 'https://api.twilio.com/2010-04-01/Accounts/' . rawurlencode($sid) . '/Usage/Records/ThisMonth.json?PageSize=200';
     $r = http_request('GET', $url, ['headers' => ['Authorization: Basic ' . base64_encode($sid . ':' . $token)]]);
     if ($r['status'] === 401) { throw new RuntimeException('Twilio認証に失敗しました（SID/Auth Tokenをご確認ください）。'); }
-    if ($r['status'] !== 200) { throw new RuntimeException('Twilio APIエラー (HTTP ' . $r['status'] . ')。'); }
+    if ($r['status'] !== 200) { throw new RuntimeException('Twilio APIエラー (HTTP ' . $r['status'] . ')。' . substr((string) $r['body'], 0, 200)); }
     $d = json_decode($r['body'], true);
+    $records = $d['usage_records'] ?? [];
+    $total = null;
     $sum = 0.0;
-    $cur = 'USD';
-    foreach (($d['usage_records'] ?? []) as $rec) {
-        $sum += (float) ($rec['price'] ?? 0);
+    $cur = '';
+    $n = 0;
+    foreach ($records as $rec) {
+        $n++;
+        $price = (float) ($rec['price'] ?? 0);
         if (!empty($rec['price_unit'])) { $cur = strtoupper((string) $rec['price_unit']); }
+        if (($rec['category'] ?? '') === 'totalprice') {
+            $total = $price;
+        } else {
+            $sum += $price;
+        }
     }
-    return ['amount' => round(abs($sum), 2), 'currency' => $cur];
+    $amount = $total !== null ? $total : $sum;
+    if ($cur === '') { $cur = 'USD'; }
+    return ['amount' => round(abs($amount), 2), 'currency' => $cur, 'note' => "Twilio: {$n}レコード"];
 }
 
 /* ------------------------------------------------------------------ *

@@ -368,7 +368,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         else {
             try {
                 $c = fetch_project_cost($gid, $p);
-                flash('ok', sprintf('コスト取得（%s）: %s %s', h($p['name']), $c['currency'], number_format($c['amount'], 2)));
+                flash('ok', sprintf('コスト取得（%s）: %s %s%s', h($p['name']), $c['currency'], number_format($c['amount'], 2), !empty($c['note']) ? '　[' . $c['note'] . ']' : ''));
             } catch (Throwable $e) {
                 flash('err', 'コスト取得に失敗: ' . $e->getMessage());
             }
