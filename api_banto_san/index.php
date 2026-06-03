@@ -596,6 +596,27 @@ foreach ($projects as $p) {
 ksort($subtotals);
 $unsetCount = count($projects);
 
+// プロダクト別コスト（通貨別）— ドーナツ／プロダクト詳細で使う
+$prodCostByCur = [];   // cur => [product => sum]
+foreach ($names as $nm) {
+    foreach (($boxesByProduct[$nm] ?? []) as $b) {
+        if ($b['monthly_cost'] !== null) {
+            $cur = $b['currency'] ?: 'USD';
+            $prodCostByCur[$cur][$nm] = ($prodCostByCur[$cur][$nm] ?? 0) + (float) $b['monthly_cost'];
+        }
+    }
+}
+// 全体ドーナツ：合計が最大の通貨でプロダクト内訳を描く
+$donutCur = '';
+$donutMax = -1.0;
+foreach ($subtotals as $cur => $sum) { if ($sum > $donutMax) { $donutMax = $sum; $donutCur = $cur; } }
+$donutSegs = [];
+if ($donutCur !== '' && !empty($prodCostByCur[$donutCur])) {
+    $pc = $prodCostByCur[$donutCur];
+    arsort($pc);
+    foreach ($pc as $nm => $v) { if ($v > 0) { $donutSegs[] = ['label' => $nm, 'value' => (float) $v]; } }
+}
+
 $providers = $pdo->prepare("SELECT DISTINCT provider FROM apis WHERE group_id = :gid AND provider <> '' ORDER BY provider");
 $providers->execute([':gid' => $gid]);
 $providers = $providers->fetchAll(PDO::FETCH_COLUMN);
@@ -620,16 +641,63 @@ function fmt_money(?float $cost, string $cur): string
 /** 通貨別合計を文字列に（例: "JPY 12,000　USD 30"） */
 function money_totals(array $rows): string
 {
+    $t = money_sum($rows);
+    if (!$t) { return '—'; }
+    ksort($t);
+    return implode('　', array_map(static fn($c, $v) => $c . ' ' . number_format($v, (fmod($v, 1.0) === 0.0) ? 0 : 2), array_keys($t), $t));
+}
+
+/** 通貨別合計を [currency => float] で返す */
+function money_sum(array $rows): array
+{
     $t = [];
     foreach ($rows as $r) {
-        if ($r['monthly_cost'] !== null) {
-            $c = $r['currency'] ?: 'JPY';
+        if (($r['monthly_cost'] ?? null) !== null) {
+            $c = ($r['currency'] ?? '') ?: 'JPY';
             $t[$c] = ($t[$c] ?? 0) + (float) $r['monthly_cost'];
         }
     }
-    if (!$t) { return '—'; }
-    ksort($t);
-    return implode('　', array_map(static fn($c, $v) => $c . ' ' . number_format($v, (fmod($v,1.0)===0.0)?0:2), array_keys($t), $t));
+    return $t;
+}
+
+/** ドーナツ用の配色（順に割り当て） */
+function donut_colors(): array
+{
+    return ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#ef4444', '#84cc16', '#3b82f6', '#f97316'];
+}
+
+/**
+ * SVG ドーナツチャートを生成。
+ * @param array $segments [ ['label'=>, 'value'=>float, 'color'=>?] ]（valueは同一通貨換算済み想定）
+ */
+function svg_donut(array $segments, float $size = 180.0, float $thickness = 26.0): string
+{
+    $total = 0.0;
+    foreach ($segments as $s) { $total += max(0.0, (float) $s['value']); }
+    $cx = $size / 2; $cy = $size / 2;
+    $r = ($size - $thickness) / 2;
+    $circ = 2 * M_PI * $r;
+    $colors = donut_colors();
+    $svg = '<svg viewBox="0 0 ' . $size . ' ' . $size . '" width="' . $size . '" height="' . $size . '" class="donut">';
+    if ($total <= 0) {
+        $svg .= '<circle cx="' . $cx . '" cy="' . $cy . '" r="' . $r . '" fill="none" stroke="#eef1f4" stroke-width="' . $thickness . '"/>';
+        $svg .= '<text x="' . $cx . '" y="' . $cy . '" text-anchor="middle" dominant-baseline="central" fill="#8a93a0" font-size="13">データなし</text>';
+        return $svg . '</svg>';
+    }
+    // 背景リング
+    $svg .= '<circle cx="' . $cx . '" cy="' . $cy . '" r="' . $r . '" fill="none" stroke="#eef1f4" stroke-width="' . $thickness . '"/>';
+    $offset = 0.0; $i = 0;
+    foreach ($segments as $s) {
+        $v = max(0.0, (float) $s['value']);
+        if ($v <= 0) { $i++; continue; }
+        $len = $circ * ($v / $total);
+        $color = $s['color'] ?? $colors[$i % count($colors)];
+        $svg .= '<circle cx="' . $cx . '" cy="' . $cy . '" r="' . $r . '" fill="none" stroke="' . h($color) . '"'
+            . ' stroke-width="' . $thickness . '" stroke-dasharray="' . round($len, 2) . ' ' . round($circ - $len, 2) . '"'
+            . ' stroke-dashoffset="' . round(-$offset, 2) . '" transform="rotate(-90 ' . $cx . ' ' . $cy . ')"/>';
+        $offset += $len; $i++;
+    }
+    return $svg . '</svg>';
 }
 
 /** URL(使用箇所)のサイト名＝ファイルパスの先頭ディレクトリ（無ければrepo） */
@@ -708,6 +776,45 @@ function render_styles(): void { ?>
     .stat .label { font-size:12px; color:var(--muted); }
     .stat .value { font-size:24px; font-weight:800; }
     .stat .value small { font-size:12px; font-weight:400; color:var(--muted); }
+
+    /* ===== ヒーロー（全体サマリ）＋ ドーナツ ===== */
+    .hero { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+    .hero-main { flex:1 1 320px; background:linear-gradient(135deg,#1f2a44,#2f6bff); color:#fff;
+        border-radius:var(--radius); padding:22px 24px; box-shadow:var(--shadow); display:flex; flex-direction:column; }
+    .hero-label { font-size:12px; letter-spacing:.04em; opacity:.85; }
+    .hero-chart .hero-label { color:var(--muted); opacity:1; }
+    .hero-amount { font-size:34px; font-weight:800; line-height:1.25; font-variant-numeric:tabular-nums; }
+    .hero-amount .cur { font-size:18px; font-weight:700; opacity:.85; margin-right:4px; }
+    .hero-amount.muted { color:#cfd6e6; }
+    .hero-stats { display:flex; gap:22px; margin-top:auto; padding-top:16px; }
+    .hero-stats > div { display:flex; flex-direction:column; }
+    .hero-stats .n { font-size:22px; font-weight:800; }
+    .hero-stats .l { font-size:11.5px; opacity:.85; }
+    .hero-chart { flex:1 1 300px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+        padding:18px 20px; box-shadow:var(--shadow); }
+    .donut-wrap { display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-top:8px; }
+    svg.donut { flex:0 0 auto; }
+    .legend { flex:1; min-width:160px; display:flex; flex-direction:column; gap:6px; }
+    .legend .leg { display:flex; align-items:center; gap:8px; font-size:13px; }
+    .legend .dot { width:11px; height:11px; border-radius:3px; flex:0 0 auto; }
+    .legend .leg-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink); text-decoration:none; }
+    .legend .leg-name:hover { color:var(--accent); text-decoration:underline; }
+    .legend .leg-pct { font-variant-numeric:tabular-nums; color:var(--muted); font-weight:700; }
+
+    /* ===== プロダクト詳細ページ ===== */
+    .crumb { font-size:13px; color:var(--muted); margin-bottom:14px; }
+    .crumb a { color:var(--accent); text-decoration:none; }
+    .detail-grid { display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-bottom:18px; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; box-shadow:var(--shadow); }
+    .panel h3 { margin:0 0 12px; font-size:14px; color:var(--muted); font-weight:700; }
+    .bigcost { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; }
+    .bar-row { display:flex; align-items:center; gap:10px; margin:8px 0; font-size:13px; }
+    .bar-row .nm { flex:0 0 38%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .bar-track { flex:1; height:10px; background:#eef1f4; border-radius:6px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:6px; }
+    .bar-row .v { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; }
+    .product-link { color:var(--accent); text-decoration:none; font-size:13px; }
+    .product-link:hover { text-decoration:underline; }
     .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:var(--card);
         border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:14px; box-shadow:var(--shadow); }
     .toolbar input, .toolbar select { padding:8px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
@@ -773,6 +880,7 @@ function render_styles(): void { ?>
         .sidebar a.nav{margin:0;padding:8px 10px;} .sidebar .who{border-top:none;margin:0;}
         .main{padding:14px;}
         .grid{grid-template-columns:1fr;}
+        .detail-grid{grid-template-columns:1fr;}
         .hide-sm{display:none;}
         .summary .stat{min-width:0;flex:1 1 45%;padding:12px;}
         .summary .stat .value{font-size:19px;}
@@ -1052,6 +1160,192 @@ function render_scan_page(array $user, array $group, int $gid): void
     <?php
 }
 ?>
+<?php
+/* ================================================================== *
+ *  プロダクト詳細ページ（route=product&name=...）
+ * ================================================================== */
+if ($route === 'product'):
+    $pname = (string) ($_GET['name'] ?? '');
+    if ($pname === '' || !isset($tree[$pname])) {
+        header('Location: ' . app_url());
+        exit;
+    }
+    $pboxes      = $boxesByProduct[$pname] ?? [];
+    $punassigned = $unassignedByProduct[$pname] ?? [];
+    $pprovider   = $providerOf[$pname] ?? '';
+
+    // コスト（通貨別）
+    $pcost = [];
+    foreach ($pboxes as $b) {
+        if ($b['monthly_cost'] !== null) { $c = $b['currency'] ?: 'USD'; $pcost[$c] = ($pcost[$c] ?? 0) + (float) $b['monthly_cost']; }
+    }
+    ksort($pcost);
+
+    // 箱ごとの内訳
+    $boxList = [];
+    foreach ($pboxes as $b) {
+        $u = $usagesByBox[(int) $b['id']] ?? [];
+        $sites = [];
+        foreach ($u as $uu) { $sites[usage_site($uu)] = 1; }
+        $boxList[] = ['box' => $b, 'urls' => dedup_urls($u), 'sites' => array_keys($sites)];
+    }
+    // ドーナツ：箱別コスト（金額あり・降順）
+    $bsegs = [];
+    foreach ($pboxes as $b) {
+        if ($b['monthly_cost'] !== null && (float) $b['monthly_cost'] > 0) { $bsegs[] = ['label' => $b['name'], 'value' => (float) $b['monthly_cost']]; }
+    }
+    usort($bsegs, static fn($a, $b) => $b['value'] <=> $a['value']);
+    $bTot = array_sum(array_map(static fn($s) => $s['value'], $bsegs));
+
+    // サイト別 URL 件数（プロダクト全体）
+    $siteCount = [];
+    foreach ($pboxes as $b) { foreach (($usagesByBox[(int) $b['id']] ?? []) as $uu) { $s = usage_site($uu); $siteCount[$s] = ($siteCount[$s] ?? 0) + 1; } }
+    foreach ($punassigned as $uu) { $s = usage_site($uu); $siteCount[$s] = ($siteCount[$s] ?? 0) + 1; }
+    arsort($siteCount);
+    $siteMax = $siteCount ? max($siteCount) : 1;
+    $totalUrls = array_sum($siteCount);
+?>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — <?= h($pname) ?></title>
+<?php render_styles(); ?>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+    <div class="brand">🛡️ <?= h(APP_NAME) ?></div>
+    <div class="navlabel">メニュー</div>
+    <a class="nav" href="index.php">📊 ダッシュボード</a>
+    <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>">🔍 スキャン</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('tokens')) ?>">🔑 トークン</a>
+    <a class="nav" href="groups.php">👥 グループ管理</a>
+    <div class="navlabel">アカウント</div>
+    <div class="who">
+        <?php if ($user['avatar_url']): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>
+        <div>
+            <div style="font-weight:700;font-size:13px"><?= h($user['name'] ?: $user['email']) ?></div>
+            <div class="role-badge"><?= h(ROLES[$role] ?? $role) ?></div>
+        </div>
+    </div>
+    <a class="nav" href="<?= h(app_url('logout')) ?>">🚪 ログアウト</a>
+</aside>
+<main class="main">
+    <div class="crumb"><a href="index.php">ダッシュボード</a> ／ <?= h($pname) ?></div>
+    <div class="topbar">
+        <h2>🔷 <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
+    </div>
+
+    <!-- ヒーロー：合計＋箱別ドーナツ -->
+    <div class="hero">
+        <div class="hero-main">
+            <div class="hero-label">月額コスト</div>
+            <?php if ($pcost): foreach ($pcost as $cur => $sum): ?>
+                <div class="hero-amount"><span class="cur"><?= h($cur) ?></span> <?= number_format($sum, (fmod($sum,1.0)===0.0)?0:2) ?></div>
+            <?php endforeach; else: ?>
+                <div class="hero-amount muted">未設定</div>
+            <?php endif; ?>
+            <div class="hero-stats">
+                <div><span class="n"><?= count($pboxes) ?></span><span class="l">プロジェクト箱</span></div>
+                <div><span class="n"><?= count($siteCount) ?></span><span class="l">サイト</span></div>
+                <div><span class="n"><?= $totalUrls ?></span><span class="l">URL</span></div>
+            </div>
+        </div>
+        <div class="hero-chart">
+            <div class="hero-label">プロジェクト箱別コスト</div>
+            <div class="donut-wrap">
+                <?= svg_donut($bsegs, 168, 24) ?>
+                <div class="legend">
+                    <?php if ($bsegs): $dc = donut_colors(); $di = 0; foreach ($bsegs as $s): if ($di >= 6) { break; } ?>
+                        <div class="leg">
+                            <span class="dot" style="background:<?= h($dc[$di % count($dc)]) ?>"></span>
+                            <span class="leg-name">📦 <?= h($s['label']) ?></span>
+                            <span class="leg-pct"><?= $bTot > 0 ? round($s['value'] / $bTot * 100) : 0 ?>%</span>
+                        </div>
+                    <?php $di++; endforeach;
+                        if (count($bsegs) > 6): ?><div class="leg muted">ほか <?= count($bsegs) - 6 ?> 件</div><?php endif; ?>
+                    <?php else: ?><div class="muted" style="font-size:13px">箱のコスト未設定</div><?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="detail-grid">
+        <!-- 箱別の月額 -->
+        <div class="panel">
+            <h3>プロジェクト箱の月額</h3>
+            <?php if ($bsegs): $dc = donut_colors(); foreach ($bsegs as $i => $s): ?>
+                <div class="bar-row">
+                    <span class="nm">📦 <?= h($s['label']) ?></span>
+                    <span class="bar-track"><span class="bar-fill" style="width:<?= $bTot > 0 ? round($s['value'] / $bTot * 100, 1) : 0 ?>%;background:<?= h($dc[$i % count($dc)]) ?>"></span></span>
+                    <span class="v"><?= number_format($s['value'], (fmod($s['value'],1.0)===0.0)?0:2) ?></span>
+                </div>
+            <?php endforeach; else: ?>
+                <div class="muted" style="font-size:13px">コストが設定された箱がありません。</div>
+            <?php endif; ?>
+        </div>
+        <!-- サイト別 URL 件数 -->
+        <div class="panel">
+            <h3>サイト別 利用箇所（URL数）</h3>
+            <?php if ($siteCount): $dc = donut_colors(); $si = 0; foreach ($siteCount as $st => $cnt): ?>
+                <div class="bar-row">
+                    <span class="nm">🌐 <?= h($st) ?></span>
+                    <span class="bar-track"><span class="bar-fill" style="width:<?= round($cnt / $siteMax * 100, 1) ?>%;background:<?= h($dc[$si % count($dc)]) ?>"></span></span>
+                    <span class="v"><?= (int) $cnt ?></span>
+                </div>
+            <?php $si++; endforeach; else: ?>
+                <div class="muted" style="font-size:13px">URLがありません。</div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- 箱とURLの一覧 -->
+    <div class="panel" style="margin-bottom:18px">
+        <h3>プロジェクト箱とURL</h3>
+        <table>
+            <thead><tr><th>箱 / URL</th><th>サイト</th><th>月額</th></tr></thead>
+            <tbody>
+            <?php foreach ($boxList as $bl): $b = $bl['box']; ?>
+                <tr class="group-head">
+                    <td>📦 <strong><?= h($b['name']) ?></strong> <span class="muted">（<?= count($bl['urls']) ?> URL）</span></td>
+                    <td class="muted"><?= h(implode('、', array_slice(array_map('strval', $bl['sites']), 0, 4))) ?><?= count($bl['sites']) > 4 ? ' ほか' : '' ?></td>
+                    <td class="cost"><?= fmt_money($b['monthly_cost'] === null ? null : (float) $b['monthly_cost'], $b['currency'] ?: 'USD') ?><?php if (($b['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($b['currency'] ?: 'USD') ?> <?= number_format((float) $b['balance'], 2) ?></div><?php endif; ?></td>
+                </tr>
+                <?php foreach ($bl['urls'] as $f): ?>
+                <tr>
+                    <td style="padding-left:28px"><?= $f['is_key'] ? '🔑' : '📄' ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></td>
+                    <td class="muted">🌐 <?= h(usage_site($f)) ?></td>
+                    <td></td>
+                </tr>
+                <?php endforeach; ?>
+            <?php endforeach; ?>
+            <?php if ($punassigned): $uurls = dedup_urls($punassigned); ?>
+                <tr class="group-head">
+                    <td>📦 <strong>未割当</strong> <span class="muted">（<?= count($uurls) ?> URL）</span></td>
+                    <td class="muted">—</td><td class="cost">—</td>
+                </tr>
+                <?php foreach ($uurls as $f): ?>
+                <tr>
+                    <td style="padding-left:28px"><?= $f['is_key'] ? '🔑' : '📄' ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></td>
+                    <td class="muted">🌐 <?= h(usage_site($f)) ?></td>
+                    <td></td>
+                </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+            <?php if (!$boxList && !$punassigned): ?>
+                <tr><td colspan="3" class="muted" style="text-align:center;padding:24px">このプロダクトにはまだ箱もURLもありません。</td></tr>
+            <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <a class="btn" href="index.php">← ダッシュボードに戻る</a>
+</main>
+</div>
+</body></html>
+<?php exit; endif; ?>
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1105,19 +1399,41 @@ function render_scan_page(array $user, array $group, int $gid): void
     <?php endif; ?>
 
     <!-- 月額合計サマリ -->
-    <div class="summary">
-        <?php if ($subtotals): ?>
-            <?php foreach ($subtotals as $cur => $sum): ?>
-                <div class="stat">
-                    <div class="label">月額合計（<?= h($cur) ?>）</div>
-                    <div class="value"><?= h($cur) ?> <?= number_format($sum, (fmod($sum,1.0)===0.0)?0:2) ?></div>
+    <div class="hero">
+        <div class="hero-main">
+            <div class="hero-label">月額コスト合計</div>
+            <?php if ($subtotals): ?>
+                <?php foreach ($subtotals as $cur => $sum): ?>
+                    <div class="hero-amount"><span class="cur"><?= h($cur) ?></span> <?= number_format($sum, (fmod($sum,1.0)===0.0)?0:2) ?></div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div class="hero-amount muted">—</div>
+            <?php endif; ?>
+            <div class="hero-stats">
+                <div><span class="n"><?= count($tree) ?></span><span class="l">プロダクト</span></div>
+                <div><span class="n"><?= count($projects) ?></span><span class="l">プロジェクト箱</span></div>
+                <div><span class="n"><?= count($allUsages) ?></span><span class="l">URL</span></div>
+            </div>
+        </div>
+        <div class="hero-chart">
+            <div class="hero-label">プロダクト別内訳<?= $donutCur !== '' ? '（' . h($donutCur) . '）' : '' ?></div>
+            <div class="donut-wrap">
+                <?= svg_donut($donutSegs, 168, 24) ?>
+                <div class="legend">
+                    <?php if ($donutSegs): $dc = donut_colors(); $di = 0;
+                        $dtot = array_sum(array_map(static fn($s) => $s['value'], $donutSegs));
+                        foreach ($donutSegs as $s): if ($di >= 6) { break; } ?>
+                        <div class="leg">
+                            <span class="dot" style="background:<?= h($dc[$di % count($dc)]) ?>"></span>
+                            <a href="<?= h(app_url('product', ['name' => $s['label']])) ?>" class="leg-name"><?= h($s['label']) ?></a>
+                            <span class="leg-pct"><?= $dtot > 0 ? round($s['value'] / $dtot * 100) : 0 ?>%</span>
+                        </div>
+                    <?php $di++; endforeach; ?>
+                    <?php if (count($donutSegs) > 6): ?><div class="leg muted">ほか <?= count($donutSegs) - 6 ?> 件</div><?php endif; ?>
+                    <?php else: ?><div class="muted" style="font-size:13px">コスト未設定</div><?php endif; ?>
                 </div>
-            <?php endforeach; ?>
-        <?php else: ?>
-            <div class="stat"><div class="label">月額合計</div><div class="value">—</div></div>
-        <?php endif; ?>
-        <div class="stat"><div class="label">プロダクト数</div><div class="value"><?= count($tree) ?> <small>件</small></div></div>
-        <div class="stat"><div class="label">プロジェクト箱</div><div class="value"><?= count($projects) ?> <small>箱</small></div></div>
+            </div>
+        </div>
     </div>
 
     <?php if (can_manage() && !encryption_ready()): ?>
@@ -1255,7 +1571,8 @@ function render_scan_page(array $user, array $group, int $gid): void
             <tr class="group-head" data-name="<?= h($gname) ?>" data-gi="<?= $gi ?>" onclick="toggleProduct(<?= $gi ?>)"
                 <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event,this)" ondragleave="gDragLeave(this)" ondrop="gDrop(event,this)"' : '' ?>>
                 <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え">⠿</span><?php endif; ?><span id="pc<?= $gi ?>" class="caret">▶</span></td>
-                <td>🔷 <strong><?= h($gname) ?></strong> <?php if ($provider): ?><span class="muted">（<?= h($provider) ?>）</span><?php endif; ?></td>
+                <td>🔷 <strong><?= h($gname) ?></strong> <?php if ($provider): ?><span class="muted">（<?= h($provider) ?>）</span><?php endif; ?>
+                    <a href="<?= h(app_url('product', ['name' => $gname])) ?>" class="product-link" onclick="event.stopPropagation()">詳細 →</a></td>
                 <td class="cost group-cost"><?= h($pmoneyStr) ?></td>
                 <td class="hide-sm" style="white-space:nowrap">
                     <span class="muted"><?= $nBoxes ?> 箱 / <?= count($prodSites) ?> サイト</span>
