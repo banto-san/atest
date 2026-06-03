@@ -1282,7 +1282,7 @@ function render_modals(string $csrf, array $names, array $credentials): void
                 <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
                     <label>識別子（プロジェクトID等・任意）</label>
                     <input name="openai_project_id" id="pf_proj" placeholder="OpenAI: proj_xxxxx（空＝組織全体）">
-                    <div class="hint">コスト取得キーは<strong>プロダクトの既定キー</strong>を使います。この箱だけのID（OpenAIのプロジェクトID等）があれば入力。<a href="index.php#credpanel">キーを管理</a></div>
+                    <div class="hint">コスト取得キーは<strong>プロダクトの既定キー</strong>を使います。この箱だけのID（OpenAIのプロジェクトID等）があれば入力。<a href="<?= h(app_url('manage')) ?>#credpanel">キーを管理</a></div>
                 </div>
                 <div class="field"><label>月額（手入力・任意）</label><input name="monthly_cost" id="pf_cost" type="number" step="0.01" min="0" placeholder="自動取得しない場合"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="pf_currency"><?php foreach (['USD','JPY','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
@@ -1411,6 +1411,110 @@ function render_modals(string $csrf, array $names, array $credentials): void
 ?>
 <?php
 /* ================================================================== *
+ *  管理ページ（route=manage）：コスト取得キー＋プロジェクト箱の管理
+ * ================================================================== */
+if ($route === 'manage'):
+    if (!$editable) { header('Location: ' . app_url()); exit; }
+?>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — 管理</title>
+<?php render_styles(); ?>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></div>
+    <div class="navlabel">メニュー</div>
+    <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
+    <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>
+    <?php if (can_edit()): ?><a class="nav active" href="<?= h(app_url('manage')) ?>"><?= icon('gear') ?> 管理</a><?php endif; ?>
+    <a class="nav" href="groups.php"><?= icon('users') ?> グループ管理</a>
+    <div class="navlabel">アカウント</div>
+    <div class="who">
+        <?php if ($user['avatar_url']): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>
+        <div>
+            <div style="font-weight:700;font-size:13px"><?= h($user['name'] ?: $user['email']) ?></div>
+            <div class="role-badge"><?= h(ROLES[$role] ?? $role) ?></div>
+        </div>
+    </div>
+    <a class="nav" href="<?= h(app_url('logout')) ?>"><?= icon('logout') ?> ログアウト</a>
+</aside>
+<main class="main">
+    <div class="topbar"><h2><?= icon('gear') ?> 管理</h2></div>
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
+
+    <!-- コスト取得キーの管理 -->
+    <div class="panel" id="credpanel" style="margin-bottom:18px">
+        <h3 style="display:flex;align-items:center;gap:8px"><?= icon('key', 16) ?> コスト取得キーの管理（<?= count($credentials) ?>）
+            <span class="grow" style="flex:1"></span>
+            <button class="btn" type="button" onclick="openCred({})"><?= icon('plus', 15) ?> キーを追加</button></h3>
+        <p class="hint" style="margin:0 0 8px">OpenAI Adminキーや Twilio トークンを名前を付けて登録。プロダクトや箱の「使うキー」で選んで使い回せます。</p>
+        <?php if ($credentials): ?>
+        <table>
+            <thead><tr><th>名前</th><th>種別</th><th>既定 proj/SID</th><th>キー</th><th>操作</th></tr></thead>
+            <tbody>
+            <?php foreach ($credentials as $cr): ?>
+                <tr>
+                    <td><?= icon('key', 15) ?> <strong><?= h($cr['name']) ?></strong></td>
+                    <td class="muted"><?= $cr['cost_type'] !== '' ? h(strtoupper($cr['cost_type'])) : '—' ?></td>
+                    <td class="muted"><?= h($cr['openai_project_id'] ?: $cr['cost_account'] ?: '—') ?></td>
+                    <td class="muted"><?= $cr['secret_hint'] ? h($cr['secret_hint']) : '<span style="color:#b42318">未保存</span>' ?></td>
+                    <td style="white-space:nowrap">
+                        <button class="link" type="button" onclick='openCred(<?= json_encode(["id"=>(int)$cr["id"],"name"=>$cr["name"],"cost_type"=>$cr["cost_type"],"cost_account"=>$cr["cost_account"],"openai_project_id"=>$cr["openai_project_id"],"secret_hint"=>$cr["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('キー「<?= h($cr['name']) ?>」を削除しますか？（このキーを使っている箱/プロダクトは未選択に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_credential"><input type="hidden" name="credential_id" value="<?= (int) $cr['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php else: ?><p class="hint">まだ登録されていません。</p><?php endif; ?>
+        <?php if (!encryption_ready()): ?><p class="hint" style="color:#92400e">⚠ APP_ENCRYPTION_KEY が未設定のため、キーの値は保存できません（config.local.php に設定してください）。</p><?php endif; ?>
+    </div>
+
+    <!-- プロジェクト箱の一覧・管理 -->
+    <div class="panel" style="margin-bottom:18px">
+        <h3 style="display:flex;align-items:center;gap:8px"><?= icon('box', 16) ?> プロジェクト箱の一覧・管理（<?= count($projects) ?>）
+            <span class="grow" style="flex:1"></span>
+            <button class="btn" type="button" onclick="openProject({})"><?= icon('plus', 15) ?> 箱を追加</button></h3>
+        <?php if ($projects): ?>
+        <table>
+            <thead><tr><th>箱</th><th>プロダクト</th><th>OpenAI proj</th><th>月額</th><th>URL数</th><th>操作</th></tr></thead>
+            <tbody>
+            <?php foreach ($projects as $p): $cnt = $boxUrlCount[(int) $p['id']] ?? 0; ?>
+                <tr>
+                    <td><?= icon('box', 15) ?> <strong><?= h($p['name']) ?></strong></td>
+                    <td class="muted"><?= $p['product'] !== '' ? h($p['product']) : '—' ?></td>
+                    <td class="muted"><?= $p['openai_project_id'] !== '' ? h($p['openai_project_id']) : '—' ?></td>
+                    <td class="cost"><?= fmt_money($p['monthly_cost'] === null ? null : (float) $p['monthly_cost'], $p['currency'] ?: 'USD') ?><?php if (($p['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($p['currency'] ?: 'USD') ?> <?= number_format((float) $p['balance'], 2) ?></div><?php endif; ?></td>
+                    <td><?= $cnt ?> <span class="muted">URL</span></td>
+                    <td style="white-space:nowrap">
+                        <?php if (($p['cost_type'] ?? '') !== '' || trim((string) $p['openai_project_id']) !== '' || ($p['credential_id'] ?? null) || isset($prodCredSet[(string) ($p['product'] ?? '')])): ?>
+                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link" type="submit"><?= icon('refresh', 15) ?> コスト</button></form>
+                        <?php endif; ?>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"product"=>$p["product"] ?? "","cost_type"=>$p["cost_type"] ?? "","cost_account"=>$p["cost_account"] ?? "","openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"],"credential_id"=>$p["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php else: ?><p class="hint">まだ箱がありません。</p><?php endif; ?>
+    </div>
+
+    <a class="btn" href="index.php"><?= icon('left', 15) ?> ダッシュボードに戻る</a>
+</main>
+</div>
+<div id="abtToast"></div>
+<?php render_modals($csrf, $names, $credentials); ?>
+</body></html>
+<?php exit; endif; ?>
+<?php
+/* ================================================================== *
  *  プロダクト詳細ページ（route=product&name=...）
  * ================================================================== */
 if ($route === 'product'):
@@ -1470,7 +1574,7 @@ if ($route === 'product'):
     <div class="navlabel">メニュー</div>
     <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
-    <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>
+    <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>    <?php if (can_edit()): ?><a class="nav" href="<?= h(app_url('manage')) ?>"><?= icon('gear') ?> 管理</a><?php endif; ?>
     <a class="nav" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
     <div class="who">
@@ -1571,7 +1675,7 @@ if ($route === 'product'):
                 <?php endforeach; ?>
             </select>
             <button class="primary" type="submit">保存</button>
-            <span class="hint">配下の箱が個別キー未設定のとき、このキーでコスト取得します。<a href="index.php#credpanel">キーを管理</a></span>
+            <span class="hint">配下の箱が個別キー未設定のとき、このキーでコスト取得します。<a href="<?= h(app_url('manage')) ?>#credpanel">キーを管理</a></span>
         </form>
     </div>
     <?php endif; ?>
@@ -1663,7 +1767,7 @@ if ($route === 'product'):
     <div class="navlabel">メニュー</div>
     <a class="nav active" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
-    <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>
+    <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>    <?php if (can_edit()): ?><a class="nav" href="<?= h(app_url('manage')) ?>"><?= icon('gear') ?> 管理</a><?php endif; ?>
     <a class="nav" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
     <div class="who">
@@ -1815,61 +1919,6 @@ if ($route === 'product'):
         <label class="hint" style="white-space:nowrap"><input type="checkbox" onchange="selAllGlobal(this)" style="width:auto"> 表示中の全URL選択</label>
         <button class="btn" type="button" onclick="openProject({})"><?= icon('plus', 15) ?> 箱を追加</button>
     </div>
-    <?php endif; ?>
-    <?php if ($editable): ?>
-    <details class="stat" id="credpanel" style="width:100%;margin-bottom:10px">
-        <summary style="cursor:pointer;font-weight:600"><?= icon('key') ?> コスト取得キーの管理（<?= count($credentials) ?>）</summary>
-        <p class="hint" style="margin:6px 0">OpenAI Adminキーや Twilio トークンを名前を付けて登録。箱やプロダクトの「使うキー」で選んで使い回せます。</p>
-        <?php if ($credentials): ?>
-        <table style="margin-top:4px">
-            <thead><tr><th>名前</th><th>種別</th><th>既定 proj/SID</th><th>キー</th><th>操作</th></tr></thead>
-            <tbody>
-            <?php foreach ($credentials as $cr): ?>
-                <tr>
-                    <td><?= icon('key', 15) ?> <strong><?= h($cr['name']) ?></strong></td>
-                    <td class="muted"><?= $cr['cost_type'] !== '' ? h(strtoupper($cr['cost_type'])) : '—' ?></td>
-                    <td class="muted"><?= h($cr['openai_project_id'] ?: $cr['cost_account'] ?: '—') ?></td>
-                    <td class="muted"><?= $cr['secret_hint'] ? h($cr['secret_hint']) : '<span style="color:#b42318">未保存</span>' ?></td>
-                    <td style="white-space:nowrap">
-                        <button class="link" type="button" onclick='openCred(<?= json_encode(["id"=>(int)$cr["id"],"name"=>$cr["name"],"cost_type"=>$cr["cost_type"],"cost_account"=>$cr["cost_account"],"openai_project_id"=>$cr["openai_project_id"],"secret_hint"=>$cr["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                        <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('キー「<?= h($cr['name']) ?>」を削除しますか？（このキーを使っている箱/プロダクトは未選択に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_credential"><input type="hidden" name="credential_id" value="<?= (int) $cr['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-        <?php else: ?><p class="hint" style="margin:4px 0">まだ登録されていません。</p><?php endif; ?>
-        <?php if (!encryption_ready()): ?><p class="hint" style="color:#92400e">⚠ APP_ENCRYPTION_KEY が未設定のため、キーの値は保存できません（config.local.php に設定してください）。</p><?php endif; ?>
-        <button class="btn" type="button" onclick="openCred({})" style="margin-top:6px"><?= icon('plus', 15) ?> キーを追加</button>
-    </details>
-    <?php endif; ?>
-    <?php if ($projects): ?>
-    <details class="stat" style="width:100%;margin-bottom:10px">
-        <summary style="cursor:pointer;font-weight:600"><?= icon('box') ?> プロジェクト箱の一覧・管理（<?= count($projects) ?>）</summary>
-        <table style="margin-top:8px">
-            <thead><tr><th>箱</th><th>OpenAI proj</th><th>月額</th><th>URL数</th><?php if ($editable): ?><th>操作</th><?php endif; ?></tr></thead>
-            <tbody>
-            <?php foreach ($projects as $p): $cnt = $boxUrlCount[(int) $p['id']] ?? 0; ?>
-                <tr>
-                    <td><?= icon('box') ?> <strong><?= h($p['name']) ?></strong></td>
-                    <td class="muted"><?= $p['openai_project_id'] !== '' ? h($p['openai_project_id']) : '—' ?></td>
-                    <td class="cost"><?= fmt_money($p['monthly_cost'] === null ? null : (float) $p['monthly_cost'], $p['currency'] ?: 'USD') ?><?php if (($p['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($p['currency'] ?: 'USD') ?> <?= number_format((float) $p['balance'], 2) ?></div><?php endif; ?></td>
-                    <td><?= $cnt ?> <span class="muted">URL</span></td>
-                    <?php if ($editable): ?>
-                    <td style="white-space:nowrap">
-                        <?php if (($p['cost_type'] ?? '') !== '' || trim((string) $p['openai_project_id']) !== '' || ($p['credential_id'] ?? null) || isset($prodCredSet[(string) ($p['product'] ?? '')])): ?>
-                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link" type="submit"><?= icon('refresh', 15) ?> コスト</button></form>
-                        <?php endif; ?>
-                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"product"=>$p["product"] ?? "","cost_type"=>$p["cost_type"] ?? "","cost_account"=>$p["cost_account"] ?? "","openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"],"credential_id"=>$p["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                        <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form>
-                    </td>
-                    <?php endif; ?>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-        <p class="hint" style="margin:6px 0 0">※ 下のツリーには「URLが入っている箱」だけが、使われているプロダクトの下に表示されます。空の箱もここから管理できます。</p>
-    </details>
     <?php endif; ?>
     <div class="table-wrap">
     <table>
