@@ -495,10 +495,6 @@ if ($filterStatus !== '' && array_key_exists($filterStatus, STATUSES)) {
     $where[] = 'a.status = :st';
     $params[':st'] = $filterStatus;
 }
-if ($filterSite !== '') {
-    $where[] = 'a.site = :site';
-    $params[':site'] = $filterSite;
-}
 $whereSql = 'WHERE ' . implode(' AND ', $where);
 
 $sql = "SELECT a.*,
@@ -528,6 +524,11 @@ $uSql = "SELECT u.*, a.name AS api_name, a.provider AS api_provider, a.site AS a
 $uStmt = $pdo->prepare($uSql);
 $uStmt->execute($params);
 $allUsages = $uStmt->fetchAll();
+
+// サイト＝ファイルパス先頭ディレクトリで絞り込み
+if ($filterSite !== '') {
+    $allUsages = array_values(array_filter($allUsages, static fn($u) => usage_site($u) === $filterSite));
+}
 
 // URL を「箱ごと」「未割当はプロダクトごと」に仕分け
 $usagesByBox = [];           // pid => [usages]
@@ -573,10 +574,13 @@ usort($names, static function ($a, $b) use ($sort, $positions, $productTotalNum)
     return ($productTotalNum[$b] <=> $productTotalNum[$a]) ?: strcmp($a, $b);
 });
 
-// サイト一覧（フィルタ用）
-$sites = $pdo->prepare("SELECT DISTINCT site FROM apis WHERE group_id = :gid AND site <> '' ORDER BY site");
-$sites->execute([':gid' => $gid]);
-$sites = $sites->fetchAll(PDO::FETCH_COLUMN);
+// サイト一覧（フィルタ用）＝全URLのファイル先頭ディレクトリ
+$sites = [];
+$sfStmt = $pdo->prepare('SELECT DISTINCT u.repo, u.file FROM usages u JOIN apis a ON a.id = u.api_id WHERE a.group_id = :gid');
+$sfStmt->execute([':gid' => $gid]);
+foreach ($sfStmt->fetchAll() as $r) { $sites[usage_site($r)] = 1; }
+$sites = array_keys($sites);
+sort($sites);
 $legacyCount = 0;
 
 // 上部サマリ：箱コストの通貨別合計
@@ -624,6 +628,15 @@ function money_totals(array $rows): string
     if (!$t) { return '—'; }
     ksort($t);
     return implode('　', array_map(static fn($c, $v) => $c . ' ' . number_format($v, (fmod($v,1.0)===0.0)?0:2), array_keys($t), $t));
+}
+
+/** URL(使用箇所)のサイト名＝ファイルパスの先頭ディレクトリ（無ければrepo） */
+function usage_site(array $u): string
+{
+    $f = (string) ($u['file'] ?? '');
+    $pos = strpos($f, '/');
+    if ($pos !== false && $pos > 0) { return substr($f, 0, $pos); }
+    return ($u['repo'] ?? '') !== '' ? $u['repo'] : '(root)';
 }
 
 /** usages を URL(repo|file|line)で重複排除し、キー定義を先頭に */
@@ -1204,10 +1217,10 @@ function render_scan_page(array $user, array $group, int $gid): void
             $pboxes = $boxesByProduct[$gname] ?? [];
             $punassigned = $unassignedByProduct[$gname] ?? [];
             $nBoxes = count($pboxes);
-            // サイト集計（配下の箱URL＋未割当URL）
+            // サイト集計（配下の箱URL＋未割当URL）＝ファイル先頭ディレクトリ
             $prodSites = [];
-            foreach ($pboxes as $b) { foreach (($usagesByBox[(int) $b['id']] ?? []) as $u) { if ($u['api_site'] !== '') { $prodSites[$u['api_site']] = 1; } } }
-            foreach ($punassigned as $u) { if ($u['api_site'] !== '') { $prodSites[$u['api_site']] = 1; } }
+            foreach ($pboxes as $b) { foreach (($usagesByBox[(int) $b['id']] ?? []) as $u) { $prodSites[usage_site($u)] = 1; } }
+            foreach ($punassigned as $u) { $prodSites[usage_site($u)] = 1; }
             // 金額（箱コストの通貨別和）
             $pmoney = [];
             foreach ($pboxes as $b) { if ($b['monthly_cost'] !== null) { $cur = $b['currency'] ?: 'USD'; $pmoney[$cur] = ($pmoney[$cur] ?? 0) + (float) $b['monthly_cost']; } }
@@ -1268,12 +1281,13 @@ function render_scan_page(array $user, array $group, int $gid): void
                     <?php if (!$urls): ?><span class="muted">URLなし（移動バーでこの箱へURL/サイトを割り当てできます）</span><?php endif; ?>
                     <?php if ($editable && $urls): ?><label class="hint" style="display:inline-block;margin-bottom:4px"><input type="checkbox" onchange="selAllBox(this,<?= $gi ?>,<?= $pj ?>)" style="width:auto"> この箱のURLを全選択</label><?php endif; ?>
                     <?php foreach ($urls as $f):
-                        $pathStr = ($f['repo'] !== '' ? $f['repo'] . ' / ' : '') . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : '');
+                        $fsite = usage_site($f);
+                        $pathStr = $fsite . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : '');
                     ?>
                         <div style="white-space:nowrap">
                             <?php if ($editable): ?><input type="checkbox" class="moveChk" value="<?= (int) $f['id'] ?>" onchange="updMoveCount()" style="width:auto"><?php endif; ?>
                             <?= $f['is_key'] ? '🔑' : '📄' ?>
-                            <?php if ($f['repo'] !== ''): ?><strong>🌐<?= h($f['repo']) ?></strong><?php endif; ?>
+                            <strong>🌐<?= h($fsite) ?></strong>
                             <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                             <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)">📋</button>
                         </div>
