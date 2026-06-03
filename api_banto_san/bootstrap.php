@@ -299,6 +299,23 @@ function db(): PDO
         )
     SQL);
 
+    // プロジェクト箱（名前＋任意でOpenAIのproj紐付け）。コスト・管理キーも保持。
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS projects (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id           INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            name               TEXT    NOT NULL,
+            openai_project_id  TEXT    NOT NULL DEFAULT '',
+            secret_enc         TEXT,
+            secret_hint        TEXT,
+            secret_fp          TEXT,
+            monthly_cost       REAL,
+            currency           TEXT    NOT NULL DEFAULT 'USD',
+            created_at         TEXT    NOT NULL,
+            updated_at         TEXT    NOT NULL
+        )
+    SQL);
+
     // v1（グループ無し）DB からのマイグレーション: apis.group_id を後付け。
     $cols = $pdo->query('PRAGMA table_info(apis)')->fetchAll();
     $hasGroup = false;
@@ -324,6 +341,25 @@ function db(): PDO
     foreach (['secret_enc' => 'TEXT', 'secret_hint' => 'TEXT', 'secret_fp' => 'TEXT', 'cost_project' => 'TEXT'] as $col => $type) {
         if (!in_array($col, $apiCols, true)) {
             $pdo->exec("ALTER TABLE apis ADD COLUMN $col $type");
+        }
+    }
+
+    // usages に所属プロジェクト(project_id)を後付け
+    $uCols = array_column($pdo->query('PRAGMA table_info(usages)')->fetchAll(), 'name');
+    if (!in_array('project_id', $uCols, true)) {
+        $pdo->exec('ALTER TABLE usages ADD COLUMN project_id INTEGER');
+    }
+
+    // 既存 cost_project → projects 箱へ自動移行（projects が空のときだけ）
+    if ((int) $pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn() === 0) {
+        $now = now();
+        $rows = $pdo->query("SELECT DISTINCT group_id, cost_project FROM apis WHERE IFNULL(cost_project,'') <> ''")->fetchAll();
+        $ins = $pdo->prepare('INSERT INTO projects (group_id, name, openai_project_id, created_at, updated_at) VALUES (:g,:n,:p,:c,:c)');
+        $asg = $pdo->prepare('UPDATE usages SET project_id = :pid WHERE api_id IN (SELECT id FROM apis WHERE group_id = :g AND cost_project = :cp)');
+        foreach ($rows as $r) {
+            $ins->execute([':g' => $r['group_id'], ':n' => $r['cost_project'], ':p' => $r['cost_project'], ':c' => $now]);
+            $pid = (int) $pdo->lastInsertId();
+            $asg->execute([':pid' => $pid, ':g' => $r['group_id'], ':cp' => $r['cost_project']]);
         }
     }
 
@@ -388,6 +424,85 @@ function secret_hint(string $plain): string
 {
     $n = strlen($plain);
     return $n <= 4 ? str_repeat('•', max($n, 1)) : '••••' . substr($plain, -4);
+}
+
+/* ------------------------------------------------------------------ *
+ *  プロジェクト箱（名前＋proj紐付け）と URL の所属管理
+ * ------------------------------------------------------------------ */
+function list_projects(int $gid): array
+{
+    $st = db()->prepare('SELECT * FROM projects WHERE group_id = :g ORDER BY name');
+    $st->execute([':g' => $gid]);
+    return $st->fetchAll();
+}
+
+function get_project(int $gid, int $id): ?array
+{
+    $st = db()->prepare('SELECT * FROM projects WHERE id = :id AND group_id = :g');
+    $st->execute([':id' => $id, ':g' => $gid]);
+    return $st->fetch() ?: null;
+}
+
+function create_project(int $gid, string $name, string $projId): int
+{
+    db()->prepare('INSERT INTO projects (group_id, name, openai_project_id, created_at, updated_at) VALUES (:g,:n,:p,:c,:c)')
+        ->execute([':g' => $gid, ':n' => $name, ':p' => $projId, ':c' => now()]);
+    return (int) db()->lastInsertId();
+}
+
+/** URL(usage) 群を箱へ移動（null で未割当に戻す）。現在グループのusageのみ。 */
+function assign_usages_to_project(int $gid, array $usageIds, ?int $projectId): int
+{
+    $ids = array_values(array_filter(array_map('intval', $usageIds)));
+    if (!$ids) { return 0; }
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $sql = "UPDATE usages SET project_id = ? WHERE id IN ($in) AND api_id IN (SELECT id FROM apis WHERE group_id = ?)";
+    $stmt = db()->prepare($sql);
+    $stmt->execute(array_merge([$projectId], $ids, [$gid]));
+    return $stmt->rowCount();
+}
+
+/** サイト(repoラベル)配下の全URLを箱へ移動 */
+function assign_site_to_project(int $gid, string $site, ?int $projectId): int
+{
+    $stmt = db()->prepare(
+        'UPDATE usages SET project_id = :pid WHERE api_id IN (SELECT id FROM apis WHERE group_id = :g AND site = :s)'
+    );
+    $stmt->execute([':pid' => $projectId, ':g' => $gid, ':s' => $site]);
+    return $stmt->rowCount();
+}
+
+/** グループ内に保存済みの OpenAI Admin キー（箱優先、無ければエントリ）を1つ返す */
+function group_openai_admin_key(int $gid): ?string
+{
+    foreach (['SELECT secret_enc FROM projects WHERE group_id = :g AND secret_enc IS NOT NULL LIMIT 1',
+              "SELECT secret_enc FROM apis WHERE group_id = :g AND secret_enc IS NOT NULL AND LOWER(provider)='openai' LIMIT 1"] as $sql) {
+        $st = db()->prepare($sql);
+        $st->execute([':g' => $gid]);
+        $enc = $st->fetchColumn();
+        if ($enc) {
+            $k = decrypt_secret((string) $enc);
+            if ($k !== null) { return $k; }
+        }
+    }
+    return null;
+}
+
+/** 箱のコストを取得して保存（OpenAI）。proj紐付けが必要。 */
+function fetch_project_cost(int $gid, array $project): array
+{
+    $projId = trim((string) ($project['openai_project_id'] ?? ''));
+    if ($projId === '') {
+        throw new RuntimeException('この箱に OpenAI プロジェクトID(proj_xxx) が紐付いていません。編集で設定してください。');
+    }
+    $key = decrypt_secret($project['secret_enc'] ?? null) ?? group_openai_admin_key($gid);
+    if ($key === null) {
+        throw new RuntimeException('OpenAI Admin キー(sk-admin-...)が見つかりません。箱の編集でキーを保存してください。');
+    }
+    $c = cost_openai($key, $projId);
+    db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, updated_at = :u WHERE id = :id AND group_id = :g')
+        ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
+    return $c;
 }
 
 /* ------------------------------------------------------------------ *

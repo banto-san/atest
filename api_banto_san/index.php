@@ -297,17 +297,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
-    if ($action === 'move_project') {
+    if ($action === 'move_to_project') {
         require_role_at_least($gid, 'member');
-        $ids = $_POST['ids'] ?? [];
-        $target = trim((string) ($_POST['target'] ?? ''));
-        if (is_array($ids) && $ids) {
-            $ids = array_values(array_filter(array_map('intval', $ids)));
-            if ($ids) {
-                $in = implode(',', array_fill(0, count($ids), '?'));
-                $stmt = $pdo->prepare("UPDATE apis SET cost_project=?, updated_at=? WHERE id IN ($in) AND group_id=?");
-                $stmt->execute(array_merge([$target, now()], $ids, [$gid]));
-                flash('ok', count($ids) . '件を' . ($target !== '' ? 'プロジェクト「' . $target . '」へ移動しました。' : 'プロジェクト未設定に戻しました。'));
+        // 移動先の箱を解決：新規作成 / 既存 / 未割当(null)
+        $pid = null;
+        $newName = trim((string) ($_POST['new_name'] ?? ''));
+        if ($newName !== '') {
+            $pid = create_project($gid, $newName, trim((string) ($_POST['new_proj'] ?? '')));
+        } elseif (($_POST['target_project'] ?? '') !== '' && $_POST['target_project'] !== 'unassign') {
+            $tp = get_project($gid, (int) $_POST['target_project']);
+            $pid = $tp ? (int) $tp['id'] : null;
+        }
+        $n = assign_usages_to_project($gid, $_POST['usage_ids'] ?? [], $pid);
+        foreach ((array) ($_POST['sites'] ?? []) as $s) {
+            $n += assign_site_to_project($gid, (string) $s, $pid);
+        }
+        flash('ok', $n . '件のURLを' . ($pid ? 'プロジェクトへ移動しました。' : '未割当に戻しました。'));
+        redirect_self();
+    }
+
+    if ($action === 'save_project') {
+        require_role_at_least($gid, 'member');
+        $pidIn = isset($_POST['project_id']) && $_POST['project_id'] !== '' ? (int) $_POST['project_id'] : null;
+        $pname = trim((string) ($_POST['name'] ?? ''));
+        $pproj = trim((string) ($_POST['openai_project_id'] ?? ''));
+        if ($pname === '') { flash('err', '箱の名前は必須です。'); redirect_self(); }
+        // 管理キー（OpenAI Admin）任意
+        $secretIn = (string) ($_POST['secret'] ?? '');
+        if ($pidIn === null) {
+            $newId = create_project($gid, $pname, $pproj);
+            $pidIn = $newId;
+        }
+        $costRaw = trim((string) ($_POST['monthly_cost'] ?? ''));
+        $mcost = ($costRaw === '') ? null : (float) $costRaw;
+        $mcur = trim((string) ($_POST['currency'] ?? 'USD')) ?: 'USD';
+        $pdo->prepare('UPDATE projects SET name=:n, openai_project_id=:p, monthly_cost=:mc, currency=:cur, updated_at=:u WHERE id=:id AND group_id=:g')
+            ->execute([':n'=>$pname, ':p'=>$pproj, ':mc'=>$mcost, ':cur'=>$mcur, ':u'=>now(), ':id'=>$pidIn, ':g'=>$gid]);
+        if ($secretIn !== '' && encryption_ready()) {
+            $pdo->prepare('UPDATE projects SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND group_id=:g')
+                ->execute([':e'=>encrypt_secret($secretIn), ':h'=>secret_hint($secretIn), ':f'=>secret_fingerprint($secretIn), ':id'=>$pidIn, ':g'=>$gid]);
+        }
+        flash('ok', 'プロジェクト箱を保存しました。');
+        redirect_self();
+    }
+
+    if ($action === 'delete_project') {
+        require_role_at_least($gid, 'admin');
+        $pidIn = (int) ($_POST['project_id'] ?? 0);
+        // 箱を消す前に、所属URLを未割当へ
+        $pdo->prepare('UPDATE usages SET project_id=NULL WHERE project_id=:p AND api_id IN (SELECT id FROM apis WHERE group_id=:g)')->execute([':p'=>$pidIn, ':g'=>$gid]);
+        $pdo->prepare('DELETE FROM projects WHERE id=:id AND group_id=:g')->execute([':id'=>$pidIn, ':g'=>$gid]);
+        flash('ok', 'プロジェクト箱を削除しました（URLは未割当に戻しました）。');
+        redirect_self();
+    }
+
+    if ($action === 'fetch_project_cost') {
+        require_role_at_least($gid, 'member');
+        $p = get_project($gid, (int) ($_POST['project_id'] ?? 0));
+        if (!$p) { flash('err', '箱が見つかりません。'); }
+        else {
+            try {
+                $c = fetch_project_cost($gid, $p);
+                flash('ok', sprintf('コスト取得（%s）: %s %s', h($p['name']), $c['currency'], number_format($c['amount'], 2)));
+            } catch (Throwable $e) {
+                flash('err', 'コスト取得に失敗: ' . $e->getMessage());
             }
         }
         redirect_self();
@@ -449,56 +502,68 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $apis = $stmt->fetchAll();
 
-// API名（プロバイダ）ごとにグループ化し、コスト合計でグループを並べ替え
-$groups = [];
-foreach ($apis as $row) {
-    $groups[$row['name']][] = $row;
-}
-$groupTotal = [];
-foreach ($groups as $gname => $rows) {
-    $t = 0.0;
-    foreach ($rows as $r) { $t += (float) ($r['monthly_cost'] ?? 0); }
-    $groupTotal[$gname] = $t;
-}
-if ($sort === 'name') {
-    uksort($groups, static fn($a, $b) => strcasecmp($a, $b));
-} elseif ($sort === 'cost') {
-    uksort($groups, static fn($a, $b) => ($groupTotal[$b] <=> $groupTotal[$a]) ?: strcmp($a, $b));
-} else { // manual: 手動順（未設定はコスト降順で後ろ）
-    $positions = group_positions($gid);
-    uksort($groups, static function ($a, $b) use ($positions, $groupTotal) {
-        $pa = $positions[$a] ?? PHP_INT_MAX;
-        $pb = $positions[$b] ?? PHP_INT_MAX;
-        if ($pa !== $pb) { return $pa <=> $pb; }
-        return ($groupTotal[$b] <=> $groupTotal[$a]) ?: strcmp($a, $b);
-    });
+// プロジェクト箱
+$projects = list_projects($gid);
+$projById = [];
+foreach ($projects as $p) { $projById[(int) $p['id']] = $p; }
+
+// 使用箇所(URL) ＋ 親API情報 ＋ 所属箱
+$uSql = "SELECT u.*, a.name AS api_name, a.provider AS api_provider, a.site AS api_site, a.key_location AS api_key
+         FROM usages u JOIN apis a ON a.id = u.api_id
+         $whereSql ORDER BY a.name, u.repo, u.file, u.line";
+$uStmt = $pdo->prepare($uSql);
+$uStmt->execute($params);
+$allUsages = $uStmt->fetchAll();
+
+// tree[プロダクト名] = ['provider'=>, 'boxes'=>[boxKey=>['pid'=>?int,'usages'=>[]]], 'sites'=>set]
+$tree = [];
+foreach ($allUsages as $u) {
+    $name = $u['api_name'];
+    if (!isset($tree[$name])) { $tree[$name] = ['provider' => $u['api_provider'], 'boxes' => [], 'sites' => []]; }
+    $pid = $u['project_id'] !== null ? (int) $u['project_id'] : 0;
+    if (!isset($tree[$name]['boxes'][$pid])) { $tree[$name]['boxes'][$pid] = ['pid' => $pid ?: null, 'usages' => []]; }
+    $tree[$name]['boxes'][$pid]['usages'][] = $u;
+    if ($u['api_site'] !== '') { $tree[$name]['sites'][$u['api_site']] = 1; }
 }
 
-// サイト一覧（フィルタ用）/ 旧形式(サイト未設定)件数
+// プロダクトのコスト合計（配下の箱コストの和）と並べ替え
+$productTotalNum = [];
+foreach ($tree as $name => $info) {
+    $sum = 0.0;
+    foreach ($info['boxes'] as $pid => $b) {
+        if ($pid && isset($projById[$pid]) && $projById[$pid]['monthly_cost'] !== null) {
+            $sum += (float) $projById[$pid]['monthly_cost'];
+        }
+    }
+    $productTotalNum[$name] = $sum;
+}
+$names = array_keys($tree);
+$positions = group_positions($gid);
+usort($names, static function ($a, $b) use ($sort, $positions, $productTotalNum) {
+    if ($sort === 'name') { return strcasecmp($a, $b); }
+    if ($sort === 'cost') { return ($productTotalNum[$b] <=> $productTotalNum[$a]) ?: strcmp($a, $b); }
+    $pa = $positions[$a] ?? PHP_INT_MAX;
+    $pb = $positions[$b] ?? PHP_INT_MAX;
+    if ($pa !== $pb) { return $pa <=> $pb; }
+    return ($productTotalNum[$b] <=> $productTotalNum[$a]) ?: strcmp($a, $b);
+});
+
+// サイト一覧（フィルタ用）
 $sites = $pdo->prepare("SELECT DISTINCT site FROM apis WHERE group_id = :gid AND site <> '' ORDER BY site");
 $sites->execute([':gid' => $gid]);
 $sites = $sites->fetchAll(PDO::FETCH_COLUMN);
-$legacyCount = (int) $pdo->query("SELECT COUNT(*) FROM apis WHERE group_id = " . (int) $gid . " AND IFNULL(site,'') = ''")->fetchColumn();
+$legacyCount = 0;
 
-// 使用箇所（現在グループ分のみ）
-$usagesByApi = [];
-$uStmt = $pdo->prepare(
-    'SELECT u.* FROM usages u JOIN apis a ON a.id = u.api_id WHERE a.group_id = :gid ORDER BY u.repo, u.file, u.line'
-);
-$uStmt->execute([':gid' => $gid]);
-foreach ($uStmt->fetchAll() as $u) {
-    $usagesByApi[(int) $u['api_id']][] = $u;
-}
-
-// 通貨別 月額小計 / 未設定件数
+// 上部サマリ：箱コストの通貨別合計
 $subtotals = [];
-$unsetCount = 0;
-foreach ($apis as $a) {
-    if ($a['monthly_cost'] === null) { $unsetCount++; continue; }
-    $cur = $a['currency'] ?: 'JPY';
-    $subtotals[$cur] = ($subtotals[$cur] ?? 0) + (float) $a['monthly_cost'];
+foreach ($projects as $p) {
+    if ($p['monthly_cost'] !== null) {
+        $cur = $p['currency'] ?: 'USD';
+        $subtotals[$cur] = ($subtotals[$cur] ?? 0) + (float) $p['monthly_cost'];
+    }
 }
 ksort($subtotals);
+$unsetCount = count($projects);
 
 $providers = $pdo->prepare("SELECT DISTINCT provider FROM apis WHERE group_id = :gid AND provider <> '' ORDER BY provider");
 $providers->execute([':gid' => $gid]);
@@ -974,8 +1039,8 @@ function render_scan_page(array $user, array $group, int $gid): void
         <?php else: ?>
             <div class="stat"><div class="label">月額合計</div><div class="value">—</div></div>
         <?php endif; ?>
-        <div class="stat"><div class="label">登録API数</div><div class="value"><?= count($apis) ?> <small>件</small></div></div>
-        <div class="stat"><div class="label">金額未設定</div><div class="value"><?= $unsetCount ?> <small>件（合計に含まず）</small></div></div>
+        <div class="stat"><div class="label">プロダクト数</div><div class="value"><?= count($tree) ?> <small>件</small></div></div>
+        <div class="stat"><div class="label">プロジェクト箱</div><div class="value"><?= count($projects) ?> <small>箱</small></div></div>
     </div>
 
     <?php if (can_manage() && !encryption_ready()): ?>
@@ -1030,17 +1095,29 @@ function render_scan_page(array $user, array $group, int $gid): void
         <?php endif; ?>
     </form>
 
-    <!-- プロダクト → プロジェクト → ファイル ビュー -->
-    <?php if (!$apis): ?>
-        <div class="empty">該当するAPIがありません。<?= $editable ? '「＋ API を追加」から登録するか、「スキャン」で取り込んでください。' : '' ?></div>
+    <!-- プロダクト → プロジェクト箱 → URL ビュー -->
+    <?php if (!$tree): ?>
+        <div class="empty">該当するデータがありません。<?= $editable ? '「＋ API を追加」または「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
-    <p class="hint" style="margin:0 0 8px">行をクリックで展開：プロダクト → プロジェクト → 使用ファイル。各サイトの☑を選んで、まとめて別プロジェクトへ移動できます。</p>
+    <p class="hint" style="margin:0 0 8px">展開：プロダクト → プロジェクト箱 → URL。URL/サイトの☑を選び、下で「箱へ移動」できます。</p>
     <?php if ($editable): ?>
     <div class="toolbar" style="margin-bottom:10px">
-        <span>選択したサイトを移動 →</span>
-        <input id="moveTarget" placeholder="移動先プロジェクトID（例 proj_xxx／空=未設定に戻す）" style="flex:1;min-width:200px">
-        <button class="primary" type="button" onclick="doMove()">選択を移動</button>
+        <span>選択を移動 →</span>
+        <select id="moveTargetSel" onchange="document.getElementById('moveNew').style.display=this.value==='new'?'flex':'none'">
+            <option value="unassign">（未割当に戻す）</option>
+            <?php foreach ($projects as $p): ?>
+                <option value="<?= (int) $p['id'] ?>">📦 <?= h($p['name']) ?><?= $p['openai_project_id'] !== '' ? '（' . h($p['openai_project_id']) . '）' : '' ?></option>
+            <?php endforeach; ?>
+            <option value="new">＋ 新しい箱を作る…</option>
+        </select>
+        <span id="moveNew" style="display:none;gap:6px;align-items:center">
+            <input id="moveNewName" placeholder="箱の名前" style="width:130px">
+            <input id="moveNewProj" placeholder="proj_xxx（任意）" style="width:140px">
+        </span>
+        <button class="primary" type="button" onclick="doMove()">箱へ移動</button>
         <span id="moveCount" class="hint"></span>
+        <span class="spacer"></span>
+        <button class="btn" type="button" onclick="openProject({})">＋ 箱を追加</button>
     </div>
     <?php endif; ?>
     <div class="table-wrap">
@@ -1048,115 +1125,92 @@ function render_scan_page(array $user, array $group, int $gid): void
         <thead>
             <tr>
                 <th style="width:28px"></th>
-                <th>プロダクト / プロジェクト / ファイル</th>
+                <th>プロダクト / 箱 / URL</th>
                 <th>月額</th>
                 <th class="hide-sm">内訳 / 操作</th>
             </tr>
         </thead>
         <tbody>
-        <?php $gi = 0; foreach ($groups as $gname => $rows): $gi++;
-            $first = $rows[0];
-            // プロジェクト単位にまとめる（OpenAIプロジェクト優先、無ければサイト）
-            $projects = [];
-            foreach ($rows as $r) {
-                if (trim((string) $r['cost_project']) !== '') {
-                    $pk = 'P:' . $r['cost_project'];
-                    $plabel = '🗂 ' . $r['cost_project'];
-                } else {
-                    $site = $r['site'] !== '' ? $r['site'] : '未設定';
-                    $pk = 'S:' . $site;
-                    $plabel = '🌐 ' . $site;
+        <?php $gi = 0; foreach ($names as $gname): $gi++;
+            $info = $tree[$gname];
+            $boxes = $info['boxes'];
+            $nSites = count($info['sites']);
+            $nProjects = count(array_filter(array_keys($boxes), static fn($k) => $k != 0));
+            // プロダクト合計（箱コストの通貨別和）
+            $pmoney = [];
+            foreach ($boxes as $pid => $b) {
+                if ($pid && isset($projById[$pid]) && $projById[$pid]['monthly_cost'] !== null) {
+                    $cur = $projById[$pid]['currency'] ?: 'USD';
+                    $pmoney[$cur] = ($pmoney[$cur] ?? 0) + (float) $projById[$pid]['monthly_cost'];
                 }
-                if (!isset($projects[$pk])) { $projects[$pk] = ['label' => $plabel, 'entries' => []]; }
-                $projects[$pk]['entries'][] = $r;
             }
-            $siteSet = [];
-            foreach ($rows as $r) { if ($r['site'] !== '') { $siteSet[$r['site']] = 1; } }
-            $nProjects = count($projects);
-            $nSites = count($siteSet);
+            ksort($pmoney);
+            $pmoneyStr = $pmoney ? implode('　', array_map(static fn($c, $v) => $c . ' ' . number_format($v, (fmod($v,1.0)===0.0)?0:2), array_keys($pmoney), $pmoney)) : '—';
+            // boxesを並べ替え：実プロジェクトを先、未割当(0)を最後
+            uksort($boxes, static fn($a, $b) => ($a == 0 ? 1 : 0) <=> ($b == 0 ? 1 : 0));
         ?>
             <tr class="group-head" data-name="<?= h($gname) ?>" data-gi="<?= $gi ?>" onclick="toggleProduct(<?= $gi ?>)"
                 <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event,this)" ondragleave="gDragLeave(this)" ondrop="gDrop(event,this)"' : '' ?>>
                 <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え">⠿</span><?php endif; ?><span id="pc<?= $gi ?>" class="caret">▶</span></td>
-                <td>
-                    🔷 <strong><?= h($gname) ?></strong>
-                    <?php if ($first['provider']): ?><span class="muted">（<?= h($first['provider']) ?>）</span><?php endif; ?>
-                    <?php if ($first['docs_url']): ?><a href="<?= h($first['docs_url']) ?>" target="_blank" rel="noopener" class="muted" onclick="event.stopPropagation()" title="ドキュメント">📄</a><?php endif; ?>
-                </td>
-                <td class="cost group-cost"><?= h(money_totals($rows)) ?></td>
+                <td>🔷 <strong><?= h($gname) ?></strong> <?php if ($info['provider']): ?><span class="muted">（<?= h($info['provider']) ?>）</span><?php endif; ?></td>
+                <td class="cost group-cost"><?= h($pmoneyStr) ?></td>
                 <td class="hide-sm" style="white-space:nowrap">
-                    <span class="muted"><?= $nProjects ?> プロジェクト / <?= $nSites ?> サイト</span>
+                    <span class="muted"><?= $nProjects ?> 箱 / <?= $nSites ?> サイト</span>
                     <?php if ($editable): ?>
-                        <form method="post" style="display:inline" onclick="event.stopPropagation()">
-                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder">
-                            <input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="up">
-                            <button class="link" type="submit" title="上へ">▲</button>
-                        </form>
-                        <form method="post" style="display:inline" onclick="event.stopPropagation()">
-                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder">
-                            <input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="down">
-                            <button class="link" type="submit" title="下へ">▼</button>
-                        </form>
+                        <form method="post" style="display:inline" onclick="event.stopPropagation()"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder"><input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="up"><button class="link" type="submit" title="上へ">▲</button></form>
+                        <form method="post" style="display:inline" onclick="event.stopPropagation()"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder"><input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="down"><button class="link" type="submit" title="下へ">▼</button></form>
                     <?php endif; ?>
                 </td>
             </tr>
-        <?php $pj = 0; foreach ($projects as $proj): $pj++;
-            $pents = $proj['entries'];
-            // 使用ファイル（重複排除）。キー定義ファイルは🔑で強調し先頭に。
-            $files = [];
-            foreach ($pents as $pe) {
-                foreach (($usagesByApi[(int) $pe['id']] ?? []) as $u) {
-                    $k = $u['repo'] . '|' . $u['file'];
-                    $isKey = is_key_def_usage($u);
-                    if (!isset($files[$k])) {
-                        $files[$k] = ['repo' => $u['repo'], 'file' => $u['file'], 'line' => $u['line'], 'is_key' => $isKey];
-                    } elseif ($isKey) {
-                        $files[$k]['is_key'] = true;
-                        if ($u['line'] !== null) { $files[$k]['line'] = $u['line']; }
-                    }
-                }
+            <!-- サイト選択（まとめ移動用） -->
+            <?php if ($editable && $info['sites']): ?>
+            <tr class="prod<?= $gi ?> p<?= $gi ?>-proj" style="display:none">
+                <td></td>
+                <td colspan="3"><span class="hint">サイトごと移動: </span>
+                    <?php foreach (array_keys($info['sites']) as $s): ?>
+                        <label style="font-size:12px;margin-right:8px;white-space:nowrap"><input type="checkbox" class="siteChk" value="<?= h($s) ?>" onchange="updMoveCount()" style="width:auto"> 🌐<?= h($s) ?></label>
+                    <?php endforeach; ?>
+                </td>
+            </tr>
+            <?php endif; ?>
+        <?php $pj = 0; foreach ($boxes as $pid => $box): $pj++;
+            $proj = $pid ? ($projById[$pid] ?? null) : null;
+            $boxLabel = $proj ? ('📦 ' . $proj['name'] . ($proj['openai_project_id'] !== '' ? '（' . $proj['openai_project_id'] . '）' : '')) : '📦 未割当';
+            $boxMoney = $proj ? fmt_money($proj['monthly_cost'] === null ? null : (float) $proj['monthly_cost'], $proj['currency'] ?: 'USD') : '—';
+            // URL一覧（重複排除：repo|file|line）。キー定義は🔑先頭。
+            $urls = [];
+            foreach ($box['usages'] as $u) {
+                $k = $u['repo'] . '|' . $u['file'] . '|' . $u['line'];
+                if (!isset($urls[$k])) { $urls[$k] = ['id' => $u['id'], 'repo' => $u['repo'], 'file' => $u['file'], 'line' => $u['line'], 'is_key' => is_key_def_usage($u)]; }
             }
-            uasort($files, static fn($a, $b) => ($b['is_key'] <=> $a['is_key']) ?: strcmp((string) $a['file'], (string) $b['file']));
-            // このプロジェクトのサイト一覧
-            $projSites = [];
-            foreach ($pents as $pe) { if ($pe['site'] !== '') { $projSites[$pe['site']] = 1; } }
+            uasort($urls, static fn($a, $b) => ($b['is_key'] <=> $a['is_key']) ?: strcmp((string) $a['file'], (string) $b['file']));
         ?>
             <tr class="prod<?= $gi ?> p<?= $gi ?>-proj" style="display:none">
                 <td style="text-align:right"><span id="jc<?= $gi ?>_<?= $pj ?>" class="caret" onclick="toggleProj(<?= $gi ?>,<?= $pj ?>)" style="cursor:pointer">▶</span></td>
-                <td style="padding-left:24px"><?= h($proj['label']) ?> <span class="muted">（<?= count($pents) ?>件）</span></td>
-                <td class="cost"><?= h(money_totals($pents)) ?></td>
-                <td class="hide-sm">
-                    <?php if ($editable): foreach ($pents as $pe): $peEdit = $pe; unset($peEdit['secret_enc'], $peEdit['secret_fp']); ?>
-                        <div style="white-space:nowrap" onclick="event.stopPropagation()">
-                            <input type="checkbox" class="moveChk" value="<?= (int) $pe['id'] ?>" onchange="updMoveCount()" style="width:auto" title="移動対象に選択">
-                            <span class="muted">🌐 <?= h($pe['site'] ?: '未設定') ?></span>
-                            <?php if (!empty($pe['secret_hint'])): ?><span class="hint">🔐<?= h($pe['secret_hint']) ?></span><?php endif; ?>
-                            <button class="link" type="button" onclick='openEdit(<?= json_encode($peEdit, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                            <?php if (cost_supported($pe['provider']) && !empty($pe['secret_hint'])): ?>
-                            <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_cost"><input type="hidden" name="id" value="<?= (int) $pe['id'] ?>"><button class="link" type="submit" title="コスト取得">⟳</button></form>
-                            <?php endif; ?>
-                            <form method="post" style="display:inline" onsubmit="return confirm('削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_api"><input type="hidden" name="id" value="<?= (int) $pe['id'] ?>"><button class="link danger" type="submit">削除</button></form>
-                        </div>
-                    <?php endforeach; endif; ?>
+                <td style="padding-left:24px"><?= h($boxLabel) ?> <span class="muted">（<?= count($urls) ?> URL）</span></td>
+                <td class="cost"><?= $boxMoney ?></td>
+                <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
+                    <?php if ($editable && $proj): ?>
+                        <?php if (trim((string) $proj['openai_project_id']) !== ''): ?>
+                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= $pid ?>"><button class="link" type="submit" title="コスト取得">⟳コスト</button></form>
+                        <?php endif; ?>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>$pid,"name"=>$proj["name"],"openai_project_id"=>$proj["openai_project_id"],"secret_hint"=>$proj["secret_hint"],"monthly_cost"=>$proj["monthly_cost"],"currency"=>$proj["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>箱を編集</button>
+                        <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($proj['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= $pid ?>"><button class="link danger" type="submit">箱削除</button></form>
+                    <?php endif; ?>
                 </td>
             </tr>
-            <!-- 使用ファイル / サイト -->
             <tr class="prod<?= $gi ?> p<?= $gi ?>j<?= $pj ?>-file" style="display:none">
                 <td></td>
                 <td colspan="3" style="padding-left:48px">
-                    <div class="hint" style="margin-bottom:4px">
-                        📂 使用ファイル（<strong>🔑</strong>=キーが定義されているファイル）
-                        <?php if ($projSites): ?>｜サイト: <?= h(implode(', ', array_keys($projSites))) ?><?php endif; ?>
-                        <?php if ($pents[0]['key_location'] !== ''): ?>｜鍵の在りか: <?= h($pents[0]['key_location']) ?><?php endif; ?>
-                    </div>
-                    <?php if (!$files): ?>
-                        <span class="muted">ファイル内に使用箇所が見つかりません（キーがサーバー環境変数等にある可能性）。サイト: <?= h(implode(', ', array_keys($projSites)) ?: '未設定') ?></span>
-                    <?php else: foreach ($files as $f): ?>
-                        <div><?= $f['is_key'] ? '🔑' : '📄' ?> <code><?= h($f['repo']) ?><?= $f['repo'] !== '' ? ' / ' : '' ?><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></div>
-                    <?php endforeach; endif; ?>
+                    <?php foreach ($urls as $f): ?>
+                        <div style="white-space:nowrap">
+                            <?php if ($editable): ?><input type="checkbox" class="moveChk" value="<?= (int) $f['id'] ?>" onchange="updMoveCount()" style="width:auto"><?php endif; ?>
+                            <?= $f['is_key'] ? '🔑' : '📄' ?> <code><?= h($f['repo']) ?><?= $f['repo'] !== '' ? ' / ' : '' ?><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
+                        </div>
+                    <?php endforeach; ?>
                 </td>
             </tr>
-        <?php endforeach; /* projects */ ?>
+        <?php endforeach; /* boxes */ ?>
         <?php endforeach; /* products */ ?>
         </tbody>
     </table>
@@ -1216,7 +1270,43 @@ function render_scan_page(array $user, array $group, int $gid): void
         </div>
     </form>
 </dialog>
+
+<!-- プロジェクト箱 編集モーダル -->
+<dialog id="projDialog">
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="save_project">
+        <input type="hidden" name="project_id" id="pf_id" value="">
+        <div class="modal-head" id="projModalTitle">プロジェクト箱</div>
+        <div class="modal-body">
+            <div class="grid">
+                <div class="field full"><label>箱の名前 <span style="color:#b42318">*</span></label><input name="name" id="pf_name" required placeholder="例: ECサイト群"></div>
+                <div class="field full"><label>OpenAI プロジェクトID（任意・コスト取得用）</label><input name="openai_project_id" id="pf_proj" placeholder="proj_xxxxx"><div class="hint">紐付けると「⟳コスト」でこの箱の額を取得します。</div></div>
+                <div class="field"><label>月額（手入力・任意）</label><input name="monthly_cost" id="pf_cost" type="number" step="0.01" min="0" placeholder="自動取得しない場合"></div>
+                <div class="field"><label>通貨</label><select name="currency" id="pf_currency"><?php foreach (['USD','JPY','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
+                <div class="field full"><label>🔐 OpenAI Admin キー（任意・コスト取得用）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="sk-admin-...（暗号化保存）"><div class="hint" id="pf_secret_state"></div></div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('projDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">保存</button>
+        </div>
+    </form>
+</dialog>
 <script>
+    const projDialog = document.getElementById('projDialog');
+    function openProject(p) {
+        p = p || {};
+        document.getElementById('projModalTitle').textContent = p.id ? 'プロジェクト箱を編集' : 'プロジェクト箱を追加';
+        document.getElementById('pf_id').value = p.id ?? '';
+        document.getElementById('pf_name').value = p.name ?? '';
+        document.getElementById('pf_proj').value = p.openai_project_id ?? '';
+        document.getElementById('pf_cost').value = (p.monthly_cost === null || p.monthly_cost === undefined) ? '' : p.monthly_cost;
+        document.getElementById('pf_currency').value = p.currency || 'USD';
+        document.getElementById('pf_secret').value = '';
+        document.getElementById('pf_secret_state').textContent = p.secret_hint ? ('現在: 🔐 ' + p.secret_hint + '（変更時のみ入力）') : 'Adminキー未保存';
+        projDialog.showModal();
+    }
     const dialog = document.getElementById('apiDialog');
     function openCreate() {
         document.getElementById('modalTitle').textContent = 'API を追加';
@@ -1302,21 +1392,34 @@ function render_scan_page(array $user, array $group, int $gid): void
         clearTimeout(t._tid); t._tid = setTimeout(() => t.classList.remove('show'), 1500);
     }
 
-    // 選択したサイト(エントリ)をまとめて別プロジェクトへ移動
+    // 選択したURL/サイトを箱へ移動
     function updMoveCount() {
-        const n = document.querySelectorAll('.moveChk:checked').length;
+        const u = document.querySelectorAll('.moveChk:checked').length;
+        const s = document.querySelectorAll('.siteChk:checked').length;
         const el = document.getElementById('moveCount');
-        if (el) el.textContent = n ? (n + ' 件選択中') : '';
+        if (el) el.textContent = (u || s) ? ('URL ' + u + ' / サイト ' + s + ' 選択中') : '';
     }
     function doMove() {
-        const ids = [...document.querySelectorAll('.moveChk:checked')].map(c => c.value);
-        if (!ids.length) { alert('移動するサイトを選択してください（☑）。'); return; }
-        const t = document.getElementById('moveTarget').value.trim();
-        if (!confirm(ids.length + ' 件を' + (t ? ('プロジェクト「' + t + '」へ') : '（プロジェクト未設定に）') + '移動します。よろしいですか？')) return;
+        const uids = [...document.querySelectorAll('.moveChk:checked')].map(c => c.value);
+        const sites = [...document.querySelectorAll('.siteChk:checked')].map(c => c.value);
+        if (!uids.length && !sites.length) { alert('移動するURLまたはサイトを☑で選択してください。'); return; }
+        const sel = document.getElementById('moveTargetSel').value;
+        let label = '未割当';
         const f = document.createElement('form'); f.method = 'post'; f.action = 'index.php';
         const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
-        add('csrf', ABT_CSRF); add('action', 'move_project'); add('target', t);
-        ids.forEach(id => add('ids[]', id));
+        add('csrf', ABT_CSRF); add('action', 'move_to_project');
+        if (sel === 'new') {
+            const nm = document.getElementById('moveNewName').value.trim();
+            if (!nm) { alert('新しい箱の名前を入れてください。'); return; }
+            add('new_name', nm); add('new_proj', document.getElementById('moveNewProj').value.trim());
+            label = '新しい箱「' + nm + '」';
+        } else if (sel !== 'unassign') {
+            add('target_project', sel);
+            label = '選択した箱';
+        }
+        if (!confirm('URL ' + uids.length + ' 件 / サイト ' + sites.length + ' 件を ' + label + ' へ移動します。よろしいですか？')) return;
+        uids.forEach(id => add('usage_ids[]', id));
+        sites.forEach(s => add('sites[]', s));
         document.body.appendChild(f); f.submit();
     }
 
