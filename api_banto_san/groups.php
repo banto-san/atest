@@ -230,12 +230,13 @@ function gstyles(): void { ?>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="<?= h(app_base_url()) ?>/favicon.svg">
 <title><?= h(APP_NAME) ?> — グループ管理</title>
 <?php gstyles(); ?>
 </head>
 <body>
 <header class="app">
-    <h1><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></h1>
+    <h1><?= icon('onsen', 20) ?> <?= h(APP_NAME) ?></h1>
     <span style="font-size:13px;color:#94a3b8">グループ管理</span>
     <span class="spacer"></span>
     <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>

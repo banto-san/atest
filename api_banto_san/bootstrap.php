@@ -16,13 +16,13 @@ register_shutdown_function(static function () {
     if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_RECOVERABLE_ERROR], true)) {
         if (!headers_sent()) { http_response_code(500); }
         echo "\n<pre style=\"background:#fff;color:#b42318;padding:12px;margin:12px;border:2px solid #b42318;white-space:pre-wrap;font-size:13px;z-index:99999;position:relative\">";
-        echo "API番人さん エラー:\n" . htmlspecialchars((string) $e['message'], ENT_QUOTES) . "\n"
+        echo "API番頭さん エラー:\n" . htmlspecialchars((string) $e['message'], ENT_QUOTES) . "\n"
            . htmlspecialchars((string) $e['file'], ENT_QUOTES) . ' : ' . (int) $e['line'];
         echo "</pre>";
     }
 });
 
-const APP_NAME = 'API番人さん';
+const APP_NAME = 'API番頭さん';
 const DB_FILE  = __DIR__ . '/data.sqlite';
 
 // status の選択肢（手動フィールド）
@@ -128,6 +128,7 @@ function icon(string $name, int $size = 18): string
 {
     static $paths = [
         'shield'    => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+        'onsen'     => '<path d="M3 14h18a9 9 0 0 1-18 0z"/><path d="M8 10c-1.5-1.5-1.5-3 0-4.5"/><path d="M12 10c-1.5-1.5-1.5-3 0-4.5"/><path d="M16 10c-1.5-1.5-1.5-3 0-4.5"/>',
         'dashboard' => '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
         'search'    => '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
         'key'       => '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
@@ -634,50 +635,45 @@ function group_openai_admin_key(int $gid): ?string
 
 /**
  * 箱のコスト取得に使うキー（クレデンシャル）を優先順位で解決する。
- *   1) 箱が選んだキー(credential_id)
- *   2) 箱の直接入力キー(secret_enc + cost_type)
- *   3) プロダクト既定のキー(catalog_pref.credential_id)
+ *   1) 箱が明示選択したキー(credential_id ＝ 上級者向け・通常は未設定)
+ *   2) プロダクト既定のキー(catalog_pref.credential_id) ← 通常はこれ
+ *   3) 箱の直接入力キー(secret_enc ＝ 旧データの保険)
  *   4) グループ内の任意のAdminキー（最後の保険・OpenAIのみ）
+ * 箱の openai_project_id（識別子）は常に優先してプロジェクト絞り込みに使う。
  * 戻り値: ['cost_type','secret','cost_account','openai_project_id','source'] or null
  */
 function resolve_cost_source(int $gid, array $project): ?array
 {
-    // 1) 箱が選んだキー
+    $boxProj = trim((string) ($project['openai_project_id'] ?? ''));
+    $useCred = static function (array $cr, string $src) use ($boxProj): array {
+        return [
+            'cost_type'         => (string) $cr['cost_type'],
+            'secret'            => decrypt_secret($cr['secret_enc'] ?? null),
+            'cost_account'      => (string) $cr['cost_account'],
+            // 箱側の識別子（プロジェクトID）があれば優先、無ければキー既定
+            'openai_project_id' => $boxProj ?: (string) $cr['openai_project_id'],
+            'source'            => $src,
+        ];
+    };
+    // 1) 箱が明示選択したキー
     $cid = isset($project['credential_id']) && $project['credential_id'] !== null ? (int) $project['credential_id'] : null;
     if ($cid) {
         $cr = get_credential($gid, $cid);
-        if ($cr) {
-            return [
-                'cost_type'         => (string) $cr['cost_type'],
-                'secret'            => decrypt_secret($cr['secret_enc'] ?? null),
-                'cost_account'      => (string) $cr['cost_account'],
-                // 箱側のプロジェクトID指定があれば優先、無ければキー既定
-                'openai_project_id' => trim((string) ($project['openai_project_id'] ?? '')) ?: (string) $cr['openai_project_id'],
-                'source'            => 'credential:' . $cr['name'],
-            ];
-        }
+        if ($cr) { return $useCred($cr, 'credential:' . $cr['name']); }
     }
-    // 2) 箱の直接入力キー
-    $boxSecret = decrypt_secret($project['secret_enc'] ?? null);
-    $boxType   = trim((string) ($project['cost_type'] ?? ''));
-    if ($boxType === '') { $boxType = trim((string) ($project['openai_project_id'] ?? '')) !== '' ? 'openai' : ''; }
-    if ($boxSecret !== null && $boxType !== '') {
-        return ['cost_type' => $boxType, 'secret' => $boxSecret, 'cost_account' => trim((string) ($project['cost_account'] ?? '')),
-                'openai_project_id' => trim((string) ($project['openai_project_id'] ?? '')), 'source' => 'box'];
-    }
-    // 3) プロダクト既定のキー
+    // 2) プロダクト既定のキー（通常はこれ）
     $pcid = product_credential_id($gid, (string) ($project['product'] ?? ''));
     if ($pcid) {
         $cr = get_credential($gid, $pcid);
-        if ($cr) {
-            return [
-                'cost_type'         => (string) $cr['cost_type'],
-                'secret'            => decrypt_secret($cr['secret_enc'] ?? null),
-                'cost_account'      => (string) $cr['cost_account'],
-                'openai_project_id' => trim((string) ($project['openai_project_id'] ?? '')) ?: (string) $cr['openai_project_id'],
-                'source'            => 'product:' . $cr['name'],
-            ];
-        }
+        if ($cr) { return $useCred($cr, 'product:' . $cr['name']); }
+    }
+    // 3) 箱の直接入力キー（旧データの保険）
+    $boxSecret = decrypt_secret($project['secret_enc'] ?? null);
+    $boxType   = trim((string) ($project['cost_type'] ?? ''));
+    if ($boxType === '') { $boxType = $boxProj !== '' ? 'openai' : ''; }
+    if ($boxSecret !== null && $boxType !== '') {
+        return ['cost_type' => $boxType, 'secret' => $boxSecret, 'cost_account' => trim((string) ($project['cost_account'] ?? '')),
+                'openai_project_id' => $boxProj, 'source' => 'box'];
     }
     // 4) グループ内のAdminキー（OpenAIのみ・保険）
     if ($boxType === 'openai' || trim((string) ($project['openai_project_id'] ?? '')) !== '') {
