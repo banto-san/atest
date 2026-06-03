@@ -229,6 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $currency     = trim((string) ($_POST['currency'] ?? 'JPY')) ?: 'JPY';
         $billing_url  = trim((string) ($_POST['billing_url'] ?? ''));
         $key_location = trim((string) ($_POST['key_location'] ?? ''));
+        $cost_project = trim((string) ($_POST['cost_project'] ?? ''));
         $site         = trim((string) ($_POST['site'] ?? ''));
         $docs_url     = trim((string) ($_POST['docs_url'] ?? ''));
         $owner        = trim((string) ($_POST['owner'] ?? ''));
@@ -259,12 +260,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($id === null) {
             $stmt = $pdo->prepare(
-                'INSERT INTO apis (group_id, name, provider, site, status, monthly_cost, currency, billing_url, key_location, docs_url, owner, notes, secret_enc, secret_hint, secret_fp, created_at, updated_at)
-                 VALUES (:gid,:name,:provider,:site,:status,:cost,:cur,:bill,:key,:docs,:owner,:notes,:senc,:shint,:sfp,:ca,:ua)'
+                'INSERT INTO apis (group_id, name, provider, site, status, monthly_cost, currency, billing_url, key_location, cost_project, docs_url, owner, notes, secret_enc, secret_hint, secret_fp, created_at, updated_at)
+                 VALUES (:gid,:name,:provider,:site,:status,:cost,:cur,:bill,:key,:cproj,:docs,:owner,:notes,:senc,:shint,:sfp,:ca,:ua)'
             );
             $stmt->execute([
                 ':gid'=>$gid, ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':status'=>$status, ':cost'=>$monthly_cost,
-                ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':docs'=>$docs_url,
+                ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':cproj'=>$cost_project, ':docs'=>$docs_url,
                 ':owner'=>$owner, ':notes'=>$notes,
                 ':senc'=>$secretMode==='set'?$secretEnc:null, ':shint'=>$secretMode==='set'?$secretHint:null, ':sfp'=>$secretMode==='set'?$secretFp:null,
                 ':ca'=>now(), ':ua'=>now(),
@@ -274,13 +275,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // 現在グループに属する行のみ更新可（横断アクセス防止）
             $stmt = $pdo->prepare(
                 'UPDATE apis SET name=:name, provider=:provider, site=:site, status=:status, monthly_cost=:cost,
-                     currency=:cur, billing_url=:bill, key_location=:key, docs_url=:docs,
+                     currency=:cur, billing_url=:bill, key_location=:key, cost_project=:cproj, docs_url=:docs,
                      owner=:owner, notes=:notes, updated_at=:ua
                  WHERE id=:id AND group_id=:gid'
             );
             $stmt->execute([
                 ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':status'=>$status, ':cost'=>$monthly_cost,
-                ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':docs'=>$docs_url,
+                ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':cproj'=>$cost_project, ':docs'=>$docs_url,
                 ':owner'=>$owner, ':notes'=>$notes, ':ua'=>now(), ':id'=>$id, ':gid'=>$gid,
             ]);
             // キーは入力があった時だけ更新（通常編集では維持）
@@ -1189,6 +1190,11 @@ function render_scan_page(array $user, array $group, int $gid): void
                         ? '暗号化して保存します。空欄なら現状維持（既存キーはそのまま）。'
                         : '⚠ APP_ENCRYPTION_KEY が未設定のため、キー値は保存できません（config.local.php に設定してください）。' ?></div>
                 </div>
+                <div class="field full">
+                    <label>コスト用プロジェクトID（任意・OpenAI等）</label>
+                    <input name="cost_project" id="f_cost_project" placeholder="例: proj_xxxxx（空なら組織全体の合計）">
+                    <div class="hint">⟳コスト時、IDを入れると<strong>そのプロジェクトのみ</strong>、空なら<strong>組織全体の合計</strong>を取得します。OpenAIのプロジェクト設定で確認できます。</div>
+                </div>
                 <div class="field"><label>請求ページURL (billing_url)</label><input name="billing_url" id="f_billing" type="url" placeholder="https://..."></div>
                 <div class="field"><label>ドキュメントURL (docs_url)</label><input name="docs_url" id="f_docs" type="url" placeholder="https://..."></div>
                 <div class="field full"><label>メモ (notes)</label><textarea name="notes" id="f_notes" rows="3" placeholder="補足・コスト変動の理由など"></textarea></div>
@@ -1205,7 +1211,7 @@ function render_scan_page(array $user, array $group, int $gid): void
     function openCreate() {
         document.getElementById('modalTitle').textContent = 'API を追加';
         document.getElementById('f_id').value = '';
-        for (const f of ['name','provider','site','cost','owner','key','billing','docs','notes','secret']) {
+        for (const f of ['name','provider','site','cost','owner','key','billing','docs','notes','secret','cost_project']) {
             const el = document.getElementById('f_' + f); if (el) el.value = '';
         }
         document.getElementById('f_currency').value = 'JPY';
@@ -1228,6 +1234,7 @@ function render_scan_page(array $user, array $group, int $gid): void
         document.getElementById('f_billing').value  = a.billing_url ?? '';
         document.getElementById('f_docs').value     = a.docs_url ?? '';
         document.getElementById('f_notes').value    = a.notes ?? '';
+        document.getElementById('f_cost_project').value = a.cost_project ?? '';
         document.getElementById('f_secret').value    = '';
         document.getElementById('f_secret_clear').checked = false;
         document.getElementById('f_secret_state').textContent =

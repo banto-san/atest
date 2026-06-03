@@ -319,8 +319,9 @@ function db(): PDO
     }
 
     // キー暗号化保存: secret_enc(暗号文) / secret_hint(伏字) / secret_fp(指紋)
+    // コスト取得用のプロジェクトID(cost_project): 空なら組織全体、指定で按分
     $apiCols = array_column($pdo->query('PRAGMA table_info(apis)')->fetchAll(), 'name');
-    foreach (['secret_enc' => 'TEXT', 'secret_hint' => 'TEXT', 'secret_fp' => 'TEXT'] as $col => $type) {
+    foreach (['secret_enc' => 'TEXT', 'secret_hint' => 'TEXT', 'secret_fp' => 'TEXT', 'cost_project' => 'TEXT'] as $col => $type) {
         if (!in_array($col, $apiCols, true)) {
             $pdo->exec("ALTER TABLE apis ADD COLUMN $col $type");
         }
@@ -413,16 +414,22 @@ function fetch_cost_for(array $api): array
         throw new RuntimeException('このエントリにAPIキー(値)が保存されていません。編集画面でキーを保存してください。');
     }
     switch ($provider) {
-        case 'openai': return cost_openai($key);
+        case 'openai': return cost_openai($key, trim((string) ($api['cost_project'] ?? '')) ?: null);
         default: throw new RuntimeException('このプロバイダのコスト自動取得には未対応です（現在 OpenAI のみ）。');
     }
 }
 
-/** OpenAI 当月コスト合計（Admin キーが必要）。Costs API を使用 */
-function cost_openai(string $key): array
+/**
+ * OpenAI 当月コスト（Admin キーが必要）。Costs API を使用。
+ * $projectId 指定でそのプロジェクトのみ、空なら組織全体の合計。
+ */
+function cost_openai(string $key, ?string $projectId = null): array
 {
     $start = strtotime(gmdate('Y-m-01 00:00:00') . ' UTC');
     $url = 'https://api.openai.com/v1/organization/costs?start_time=' . $start . '&bucket_width=1d&limit=62';
+    if ($projectId !== null && $projectId !== '') {
+        $url .= '&project_ids=' . rawurlencode($projectId);
+    }
     $r = http_request('GET', $url, ['headers' => ['Authorization: Bearer ' . $key]]);
 
     if ($r['status'] === 401 || $r['status'] === 403) {
