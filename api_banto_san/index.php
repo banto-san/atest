@@ -886,6 +886,7 @@ function render_styles(): void { ?>
     .caret .ic { transition:transform .15s ease; }
     .caret.open .ic { transform:rotate(90deg); }
     .ic { vertical-align:-0.16em; flex:0 0 auto; }
+    .brandlogo { height:24px; width:auto; flex:0 0 auto; vertical-align:-6px; }
     button .ic, a.btn .ic, .link .ic, .product-link .ic { vertical-align:-0.18em; }
     .sidebar a.nav .ic, .sidebar .brand .ic { vertical-align:-0.22em; }
     .drag-handle { cursor:grab; color:#94a3b8; margin-right:4px; user-select:none; display:inline-flex; align-items:center; }
@@ -957,7 +958,7 @@ function render_login_page(): void
 <title><?= h(APP_NAME) ?> — ログイン</title>
 <?php render_styles(); ?>
 </head><body>
-<header class="app"><h1><?= icon('noren', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">API棚卸しダッシュボード</span></header>
+<header class="app"><h1><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></h1><span class="tag">API棚卸しダッシュボード</span></header>
 <div class="wrap">
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
     <div class="login-box">
@@ -1004,7 +1005,7 @@ function render_tokens_page(array $user): void
 <?php render_styles(); ?>
 </head><body>
 <header class="app">
-    <h1><?= icon('noren', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">個人用トークン</span>
+    <h1><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></h1><span class="tag">個人用トークン</span>
     <span class="spacer"></span>
     <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
@@ -1085,7 +1086,7 @@ function render_scan_page(array $user, array $group, int $gid): void
 <?php render_styles(); ?>
 </head><body>
 <header class="app">
-    <h1><?= icon('noren', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">スキャン — <?= h($group['name']) ?></span>
+    <h1><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></h1><span class="tag">スキャン — <?= h($group['name']) ?></span>
     <span class="spacer"></span>
     <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
@@ -1465,7 +1466,7 @@ if ($route === 'product'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand"><?= icon('noren', 20) ?> <?= h(APP_NAME) ?></div>
+    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></div>
     <div class="navlabel">メニュー</div>
     <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
@@ -1658,7 +1659,7 @@ if ($route === 'product'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand"><?= icon('noren', 20) ?> <?= h(APP_NAME) ?></div>
+    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></div>
     <div class="navlabel">メニュー</div>
     <a class="nav active" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
