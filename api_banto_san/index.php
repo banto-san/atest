@@ -1156,6 +1156,7 @@ function render_scan_page(array $user, array $group, int $gid): void
         <button class="primary" type="button" onclick="doMove()">箱へ移動</button>
         <span id="moveCount" class="hint"></span>
         <span class="spacer"></span>
+        <label class="hint" style="white-space:nowrap"><input type="checkbox" onchange="selAllGlobal(this)" style="width:auto"> 表示中の全URL選択</label>
         <button class="btn" type="button" onclick="openProject({})">＋ 箱を追加</button>
     </div>
     <?php endif; ?>
@@ -1265,10 +1266,16 @@ function render_scan_page(array $user, array $group, int $gid): void
                 <td></td>
                 <td colspan="3" style="padding-left:48px">
                     <?php if (!$urls): ?><span class="muted">URLなし（移動バーでこの箱へURL/サイトを割り当てできます）</span><?php endif; ?>
-                    <?php foreach ($urls as $f): ?>
+                    <?php if ($editable && $urls): ?><label class="hint" style="display:inline-block;margin-bottom:4px"><input type="checkbox" onchange="selAllBox(this,<?= $gi ?>,<?= $pj ?>)" style="width:auto"> この箱のURLを全選択</label><?php endif; ?>
+                    <?php foreach ($urls as $f):
+                        $pathStr = ($f['repo'] !== '' ? $f['repo'] . ' / ' : '') . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : '');
+                    ?>
                         <div style="white-space:nowrap">
                             <?php if ($editable): ?><input type="checkbox" class="moveChk" value="<?= (int) $f['id'] ?>" onchange="updMoveCount()" style="width:auto"><?php endif; ?>
-                            <?= $f['is_key'] ? '🔑' : '📄' ?> <code><?= h($f['repo']) ?><?= $f['repo'] !== '' ? ' / ' : '' ?><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
+                            <?= $f['is_key'] ? '🔑' : '📄' ?>
+                            <?php if ($f['repo'] !== ''): ?><strong>🌐<?= h($f['repo']) ?></strong><?php endif; ?>
+                            <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
+                            <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)">📋</button>
                         </div>
                     <?php endforeach; ?>
                 </td>
@@ -1467,6 +1474,23 @@ function render_scan_page(array $user, array $group, int $gid): void
         const s = document.querySelectorAll('.siteChk:checked').length;
         const el = document.getElementById('moveCount');
         if (el) el.textContent = (u || s) ? ('URL ' + u + ' / サイト ' + s + ' 選択中') : '';
+    }
+    function selAllBox(cb, gi, pj) {
+        document.querySelectorAll('.p' + gi + 'j' + pj + '-file .moveChk').forEach(c => { c.checked = cb.checked; });
+        updMoveCount();
+    }
+    function selAllGlobal(cb) {
+        document.querySelectorAll('.moveChk').forEach(c => { c.checked = cb.checked; });
+        updMoveCount();
+    }
+    function copyText(t) {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(t).then(() => abtToast('コピー: ' + t)).catch(() => abtToast('コピーできませんでした'));
+        } else {
+            const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); abtToast('コピー: ' + t); } catch (e) { abtToast('コピーできませんでした'); }
+            ta.remove();
+        }
     }
     function doMove() {
         const uids = [...document.querySelectorAll('.moveChk:checked')].map(c => c.value);
