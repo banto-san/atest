@@ -534,7 +534,13 @@ function fetch_project_cost(int $gid, array $project): array
         case 'twilio':
             if ($secret === null) { throw new RuntimeException('Twilioの Auth Token を箱の編集で保存してください。'); }
             $c = cost_twilio($account, $secret);
-            try { $b = twilio_balance($account, $secret); $balance = $b['amount']; if ($c['currency'] === '' && $b['currency'] !== '') { $c['currency'] = $b['currency']; } } catch (Throwable $e) { /* 残高取得失敗は無視 */ }
+            try {
+                $b = twilio_balance($account, $secret);
+                $balance = $b['amount'];
+                if (($c['currency'] ?? '') === '' && $b['currency'] !== '') { $c['currency'] = $b['currency']; }
+            } catch (Throwable $e) {
+                $c['note'] = ($c['note'] ?? '') . ' / 残高取得NG: ' . $e->getMessage();
+            }
             break;
         default:
             throw new RuntimeException('この箱のコスト種別が未設定です。編集でコスト種別（OpenAI / Twilio 等）を選んでください。');
