@@ -297,6 +297,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'move_project') {
+        require_role_at_least($gid, 'member');
+        $ids = $_POST['ids'] ?? [];
+        $target = trim((string) ($_POST['target'] ?? ''));
+        if (is_array($ids) && $ids) {
+            $ids = array_values(array_filter(array_map('intval', $ids)));
+            if ($ids) {
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $stmt = $pdo->prepare("UPDATE apis SET cost_project=?, updated_at=? WHERE id IN ($in) AND group_id=?");
+                $stmt->execute(array_merge([$target, now()], $ids, [$gid]));
+                flash('ok', count($ids) . '件を' . ($target !== '' ? 'プロジェクト「' . $target . '」へ移動しました。' : 'プロジェクト未設定に戻しました。'));
+            }
+        }
+        redirect_self();
+    }
+
     if ($action === 'reorder') {
         require_role_at_least($gid, 'member');
         $name = (string) ($_POST['name'] ?? '');
@@ -1018,7 +1034,15 @@ function render_scan_page(array $user, array $group, int $gid): void
     <?php if (!$apis): ?>
         <div class="empty">該当するAPIがありません。<?= $editable ? '「＋ API を追加」から登録するか、「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
-    <p class="hint" style="margin:0 0 8px">行をクリックで展開：プロダクト → プロジェクト → キーが入っているファイル。</p>
+    <p class="hint" style="margin:0 0 8px">行をクリックで展開：プロダクト → プロジェクト → 使用ファイル。各サイトの☑を選んで、まとめて別プロジェクトへ移動できます。</p>
+    <?php if ($editable): ?>
+    <div class="toolbar" style="margin-bottom:10px">
+        <span>選択したサイトを移動 →</span>
+        <input id="moveTarget" placeholder="移動先プロジェクトID（例 proj_xxx／空=未設定に戻す）" style="flex:1;min-width:200px">
+        <button class="primary" type="button" onclick="doMove()">選択を移動</button>
+        <span id="moveCount" class="hint"></span>
+    </div>
+    <?php endif; ?>
     <div class="table-wrap">
     <table>
         <thead>
@@ -1101,14 +1125,18 @@ function render_scan_page(array $user, array $group, int $gid): void
                 <td style="text-align:right"><span id="jc<?= $gi ?>_<?= $pj ?>" class="caret" onclick="toggleProj(<?= $gi ?>,<?= $pj ?>)" style="cursor:pointer">▶</span></td>
                 <td style="padding-left:24px"><?= h($proj['label']) ?> <span class="muted">（<?= count($pents) ?>件）</span></td>
                 <td class="cost"><?= h(money_totals($pents)) ?></td>
-                <td class="hide-sm" style="white-space:nowrap">
+                <td class="hide-sm">
                     <?php if ($editable): foreach ($pents as $pe): $peEdit = $pe; unset($peEdit['secret_enc'], $peEdit['secret_fp']); ?>
-                        <span class="muted" title="<?= h($pe['site'] ?: 'サイト未設定') ?>">·</span>
-                        <button class="link" type="button" onclick='openEdit(<?= json_encode($peEdit, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                        <?php if (cost_supported($pe['provider']) && !empty($pe['secret_hint'])): ?>
-                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_cost"><input type="hidden" name="id" value="<?= (int) $pe['id'] ?>"><button class="link" type="submit" title="コスト取得">⟳</button></form>
-                        <?php endif; ?>
-                        <form method="post" style="display:inline" onsubmit="return confirm('削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_api"><input type="hidden" name="id" value="<?= (int) $pe['id'] ?>"><button class="link danger" type="submit">削除</button></form>
+                        <div style="white-space:nowrap" onclick="event.stopPropagation()">
+                            <input type="checkbox" class="moveChk" value="<?= (int) $pe['id'] ?>" onchange="updMoveCount()" style="width:auto" title="移動対象に選択">
+                            <span class="muted">🌐 <?= h($pe['site'] ?: '未設定') ?></span>
+                            <?php if (!empty($pe['secret_hint'])): ?><span class="hint">🔐<?= h($pe['secret_hint']) ?></span><?php endif; ?>
+                            <button class="link" type="button" onclick='openEdit(<?= json_encode($peEdit, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                            <?php if (cost_supported($pe['provider']) && !empty($pe['secret_hint'])): ?>
+                            <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_cost"><input type="hidden" name="id" value="<?= (int) $pe['id'] ?>"><button class="link" type="submit" title="コスト取得">⟳</button></form>
+                            <?php endif; ?>
+                            <form method="post" style="display:inline" onsubmit="return confirm('削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_api"><input type="hidden" name="id" value="<?= (int) $pe['id'] ?>"><button class="link danger" type="submit">削除</button></form>
+                        </div>
                     <?php endforeach; endif; ?>
                 </td>
             </tr>
@@ -1272,6 +1300,24 @@ function render_scan_page(array $user, array $group, int $gid): void
         const t = document.getElementById('abtToast'); if (!t) return;
         t.textContent = msg; t.classList.add('show');
         clearTimeout(t._tid); t._tid = setTimeout(() => t.classList.remove('show'), 1500);
+    }
+
+    // 選択したサイト(エントリ)をまとめて別プロジェクトへ移動
+    function updMoveCount() {
+        const n = document.querySelectorAll('.moveChk:checked').length;
+        const el = document.getElementById('moveCount');
+        if (el) el.textContent = n ? (n + ' 件選択中') : '';
+    }
+    function doMove() {
+        const ids = [...document.querySelectorAll('.moveChk:checked')].map(c => c.value);
+        if (!ids.length) { alert('移動するサイトを選択してください（☑）。'); return; }
+        const t = document.getElementById('moveTarget').value.trim();
+        if (!confirm(ids.length + ' 件を' + (t ? ('プロジェクト「' + t + '」へ') : '（プロジェクト未設定に）') + '移動します。よろしいですか？')) return;
+        const f = document.createElement('form'); f.method = 'post'; f.action = 'index.php';
+        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+        add('csrf', ABT_CSRF); add('action', 'move_project'); add('target', t);
+        ids.forEach(id => add('ids[]', id));
+        document.body.appendChild(f); f.submit();
     }
 
     // プロダクト展開 → プロジェクト行を表示（閉じる時はファイルも畳む）
