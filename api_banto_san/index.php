@@ -507,6 +507,12 @@ $projects = list_projects($gid);
 $projById = [];
 foreach ($projects as $p) { $projById[(int) $p['id']] = $p; }
 
+// 箱ごとのURL件数（フィルタ非依存）
+$boxUrlCount = [];
+$bc = $pdo->prepare('SELECT project_id, COUNT(*) c FROM usages WHERE project_id IS NOT NULL AND api_id IN (SELECT id FROM apis WHERE group_id = :g) GROUP BY project_id');
+$bc->execute([':g' => $gid]);
+foreach ($bc->fetchAll() as $r) { $boxUrlCount[(int) $r['project_id']] = (int) $r['c']; }
+
 // 使用箇所(URL) ＋ 親API情報 ＋ 所属箱
 $uSql = "SELECT u.*, a.name AS api_name, a.provider AS api_provider, a.site AS api_site, a.key_location AS api_key
          FROM usages u JOIN apis a ON a.id = u.api_id
@@ -1119,6 +1125,34 @@ function render_scan_page(array $user, array $group, int $gid): void
         <span class="spacer"></span>
         <button class="btn" type="button" onclick="openProject({})">＋ 箱を追加</button>
     </div>
+    <?php endif; ?>
+    <?php if ($projects): ?>
+    <details class="stat" style="width:100%;margin-bottom:10px" <?= $editable ? 'open' : '' ?>>
+        <summary style="cursor:pointer;font-weight:600">📦 プロジェクト箱の一覧・管理（<?= count($projects) ?>）</summary>
+        <table style="margin-top:8px">
+            <thead><tr><th>箱</th><th>OpenAI proj</th><th>月額</th><th>URL数</th><?php if ($editable): ?><th>操作</th><?php endif; ?></tr></thead>
+            <tbody>
+            <?php foreach ($projects as $p): $cnt = $boxUrlCount[(int) $p['id']] ?? 0; ?>
+                <tr>
+                    <td>📦 <strong><?= h($p['name']) ?></strong></td>
+                    <td class="muted"><?= $p['openai_project_id'] !== '' ? h($p['openai_project_id']) : '—' ?></td>
+                    <td class="cost"><?= fmt_money($p['monthly_cost'] === null ? null : (float) $p['monthly_cost'], $p['currency'] ?: 'USD') ?></td>
+                    <td><?= $cnt ?> <span class="muted">URL</span></td>
+                    <?php if ($editable): ?>
+                    <td style="white-space:nowrap">
+                        <?php if (trim((string) $p['openai_project_id']) !== ''): ?>
+                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link" type="submit">⟳コスト</button></form>
+                        <?php endif; ?>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form>
+                    </td>
+                    <?php endif; ?>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <p class="hint" style="margin:6px 0 0">※ 下のツリーには「URLが入っている箱」だけが、使われているプロダクトの下に表示されます。空の箱もここから管理できます。</p>
+    </details>
     <?php endif; ?>
     <div class="table-wrap">
     <table>
