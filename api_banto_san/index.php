@@ -863,6 +863,14 @@ function render_styles(): void { ?>
     .bar-row .v { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; }
     .product-link { color:var(--accent); text-decoration:none; font-size:13px; }
     .product-link:hover { text-decoration:underline; }
+    .fab { position:fixed; right:22px; bottom:22px; z-index:200; display:inline-flex; align-items:center; gap:8px;
+        padding:12px 18px; border-radius:999px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px;
+        box-shadow:0 10px 26px rgba(31,58,138,.40); cursor:pointer; }
+    .fab:hover { background:var(--accent-d); }
+    .fab .ic { color:#fff; }
+    .fab.active { background:var(--gold); color:#3a2a05; box-shadow:0 10px 26px rgba(224,169,59,.45); }
+    .fab.active .ic { color:#3a2a05; }
+    @media (max-width:560px){ .fab .fab-label{ display:none; } .fab{ padding:14px; } }
     .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:var(--card);
         border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:14px; box-shadow:var(--shadow); }
     .toolbar input, .toolbar select { padding:8px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
@@ -1783,6 +1791,9 @@ if ($route === 'product'):
     <div class="topbar">
         <h2>ダッシュボード</h2>
         <span class="grow"></span>
+        <?php if ($editable): ?>
+            <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
+        <?php endif; ?>
         <?php if (count($memberships) > 1): ?>
             <select onchange="if(this.value)location.href=this.value">
                 <?php foreach ($memberships as $m): ?>
@@ -1860,39 +1871,30 @@ if ($route === 'product'):
         </div>
     <?php endif; ?>
 
-    <!-- 絞り込み / 検索 -->
-    <form class="toolbar" method="get">
-        <input type="search" name="q" value="<?= h($q) ?>" placeholder="API / サイト / キー / メモ で検索">
-        <select name="site">
-            <option value="">サイト（すべて）</option>
-            <?php foreach ($sites as $s): ?>
-                <option value="<?= h($s) ?>" <?= $s === $filterSite ? 'selected' : '' ?>><?= h($s) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <select name="provider">
-            <option value="">provider（すべて）</option>
-            <?php foreach ($providers as $p): ?>
-                <option value="<?= h($p) ?>" <?= $p === $filterProv ? 'selected' : '' ?>><?= h($p) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <select name="status">
-            <option value="">status（すべて）</option>
-            <?php foreach (STATUSES as $k => $v): ?>
-                <option value="<?= h($k) ?>" <?= $k === $filterStatus ? 'selected' : '' ?>><?= h($v) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <select name="sort" onchange="this.form.submit()">
-            <option value="manual" <?= $sort === 'manual' ? 'selected' : '' ?>>手動の並び順</option>
-            <option value="cost" <?= $sort === 'cost' ? 'selected' : '' ?>>金額順</option>
-            <option value="name" <?= $sort === 'name' ? 'selected' : '' ?>>プロバイダ名順</option>
-        </select>
-        <button class="primary" type="submit">絞り込み</button>
-        <a class="btn" href="index.php">クリア</a>
-        <span class="spacer"></span>
-        <?php if ($editable): ?>
-            <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
-        <?php endif; ?>
-    </form>
+    <?php $filterActive = ($q !== '' || $filterSite !== '' || $filterProv !== '' || $filterStatus !== ''); ?>
+    <!-- 絞り込み・並び替え（右下の追従ボタンから開く） -->
+    <button type="button" class="fab<?= $filterActive ? ' active' : '' ?>" onclick="document.getElementById('filterDialog').showModal()" title="絞り込み・並び替え">
+        <?= icon('search', 20) ?><span class="fab-label">絞り込み<?= $filterActive ? '（適用中）' : '' ?></span>
+    </button>
+    <dialog id="filterDialog">
+        <form method="get">
+            <div class="modal-head">絞り込み・並び替え</div>
+            <div class="modal-body">
+                <div class="grid">
+                    <div class="field full"><label>検索</label><input type="search" name="q" value="<?= h($q) ?>" placeholder="API / サイト / キー / メモ で検索"></div>
+                    <div class="field"><label>サイト</label><select name="site"><option value="">すべて</option><?php foreach ($sites as $s): ?><option value="<?= h($s) ?>" <?= $s === $filterSite ? 'selected' : '' ?>><?= h($s) ?></option><?php endforeach; ?></select></div>
+                    <div class="field"><label>provider</label><select name="provider"><option value="">すべて</option><?php foreach ($providers as $p): ?><option value="<?= h($p) ?>" <?= $p === $filterProv ? 'selected' : '' ?>><?= h($p) ?></option><?php endforeach; ?></select></div>
+                    <div class="field"><label>status</label><select name="status"><option value="">すべて</option><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>" <?= $k === $filterStatus ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></div>
+                    <div class="field"><label>並び順</label><select name="sort"><option value="manual" <?= $sort === 'manual' ? 'selected' : '' ?>>手動の並び順</option><option value="cost" <?= $sort === 'cost' ? 'selected' : '' ?>>金額順</option><option value="name" <?= $sort === 'name' ? 'selected' : '' ?>>プロバイダ名順</option></select></div>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <a class="btn" href="index.php">クリア</a>
+                <button type="button" class="btn" onclick="document.getElementById('filterDialog').close()">閉じる</button>
+                <button class="primary" type="submit">適用</button>
+            </div>
+        </form>
+    </dialog>
 
     <!-- プロダクト → プロジェクト箱 → URL ビュー -->
     <?php if (!$tree): ?>
