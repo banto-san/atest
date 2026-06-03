@@ -330,6 +330,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pname = trim((string) ($_POST['name'] ?? ''));
         $pprod = trim((string) ($_POST['product'] ?? ''));
         $pproj = trim((string) ($_POST['openai_project_id'] ?? ''));
+        $ptype = in_array($_POST['cost_type'] ?? '', ['', 'openai', 'twilio'], true) ? $_POST['cost_type'] : '';
+        $pacct = trim((string) ($_POST['cost_account'] ?? ''));
         if ($pname === '') { flash('err', '箱の名前は必須です。'); redirect_self(); }
         // 管理キー（OpenAI Admin）任意
         $secretIn = (string) ($_POST['secret'] ?? '');
@@ -339,8 +341,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $costRaw = trim((string) ($_POST['monthly_cost'] ?? ''));
         $mcost = ($costRaw === '') ? null : (float) $costRaw;
         $mcur = trim((string) ($_POST['currency'] ?? 'USD')) ?: 'USD';
-        $pdo->prepare('UPDATE projects SET name=:n, product=:prod, openai_project_id=:p, monthly_cost=:mc, currency=:cur, updated_at=:u WHERE id=:id AND group_id=:g')
-            ->execute([':n'=>$pname, ':prod'=>$pprod, ':p'=>$pproj, ':mc'=>$mcost, ':cur'=>$mcur, ':u'=>now(), ':id'=>$pidIn, ':g'=>$gid]);
+        $pdo->prepare('UPDATE projects SET name=:n, product=:prod, cost_type=:ct, cost_account=:ca, openai_project_id=:p, monthly_cost=:mc, currency=:cur, updated_at=:u WHERE id=:id AND group_id=:g')
+            ->execute([':n'=>$pname, ':prod'=>$pprod, ':ct'=>$ptype, ':ca'=>$pacct, ':p'=>$pproj, ':mc'=>$mcost, ':cur'=>$mcur, ':u'=>now(), ':id'=>$pidIn, ':g'=>$gid]);
         if ($secretIn !== '' && encryption_ready()) {
             $pdo->prepare('UPDATE projects SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND group_id=:g')
                 ->execute([':e'=>encrypt_secret($secretIn), ':h'=>secret_hint($secretIn), ':f'=>secret_fingerprint($secretIn), ':id'=>$pidIn, ':g'=>$gid]);
@@ -1187,10 +1189,10 @@ function render_scan_page(array $user, array $group, int $gid): void
                     <td><?= $cnt ?> <span class="muted">URL</span></td>
                     <?php if ($editable): ?>
                     <td style="white-space:nowrap">
-                        <?php if (trim((string) $p['openai_project_id']) !== ''): ?>
+                        <?php if (($p['cost_type'] ?? '') !== '' || trim((string) $p['openai_project_id']) !== ''): ?>
                         <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link" type="submit">⟳コスト</button></form>
                         <?php endif; ?>
-                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"product"=>$p["product"] ?? "","cost_type"=>$p["cost_type"] ?? "","cost_account"=>$p["cost_account"] ?? "","openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form>
                     </td>
                     <?php endif; ?>
@@ -1267,10 +1269,10 @@ function render_scan_page(array $user, array $group, int $gid): void
                 <td class="cost"><?= $boxMoney ?></td>
                 <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
                     <?php if ($editable && $proj): ?>
-                        <?php if (trim((string) $proj['openai_project_id']) !== ''): ?>
+                        <?php if (($proj['cost_type'] ?? '') !== '' || trim((string) $proj['openai_project_id']) !== ''): ?>
                         <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link" type="submit" title="コスト取得">⟳コスト</button></form>
                         <?php endif; ?>
-                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$proj["id"],"name"=>$proj["name"],"product"=>$proj["product"],"openai_project_id"=>$proj["openai_project_id"],"secret_hint"=>$proj["secret_hint"],"monthly_cost"=>$proj["monthly_cost"],"currency"=>$proj["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>箱を編集</button>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$proj["id"],"name"=>$proj["name"],"product"=>$proj["product"],"cost_type"=>$proj["cost_type"] ?? "","cost_account"=>$proj["cost_account"] ?? "","openai_project_id"=>$proj["openai_project_id"],"secret_hint"=>$proj["secret_hint"],"monthly_cost"=>$proj["monthly_cost"],"currency"=>$proj["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>箱を編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($proj['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link danger" type="submit">箱削除</button></form>
                     <?php endif; ?>
                 </td>
@@ -1370,10 +1372,19 @@ function render_scan_page(array $user, array $group, int $gid): void
                     <datalist id="productList"><?php foreach ($names as $nm): if ($nm !== '（プロダクト未指定）'): ?><option value="<?= h($nm) ?>"></option><?php endif; endforeach; ?></datalist>
                     <div class="hint">この箱がどのAPI（プロダクト）の下に表示されるか。</div>
                 </div>
-                <div class="field full"><label>OpenAI プロジェクトID（任意・コスト取得用）</label><input name="openai_project_id" id="pf_proj" placeholder="proj_xxxxx"><div class="hint">紐付けると「⟳コスト」でこの箱の額を取得します。</div></div>
+                <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
+                    <label>コスト自動取得の種別</label>
+                    <select name="cost_type" id="pf_cost_type" onchange="pfCostTypeChange()">
+                        <option value="">なし（手入力）</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="twilio">Twilio</option>
+                    </select>
+                </div>
+                <div class="field full" id="pf_proj_wrap"><label>OpenAI プロジェクトID</label><input name="openai_project_id" id="pf_proj" placeholder="proj_xxxxx（空＝組織全体）"></div>
+                <div class="field full" id="pf_acct_wrap" style="display:none"><label id="pf_acct_label">アカウントID</label><input name="cost_account" id="pf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
                 <div class="field"><label>月額（手入力・任意）</label><input name="monthly_cost" id="pf_cost" type="number" step="0.01" min="0" placeholder="自動取得しない場合"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="pf_currency"><?php foreach (['USD','JPY','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
-                <div class="field full"><label>🔐 OpenAI Admin キー（任意・コスト取得用）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="sk-admin-...（暗号化保存）"><div class="hint" id="pf_secret_state"></div></div>
+                <div class="field full"><label>🔐 キー / トークン（コスト取得用・暗号化保存）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="pf_secret_state"></div></div>
             </div>
         </div>
         <div class="modal-foot">
@@ -1384,13 +1395,23 @@ function render_scan_page(array $user, array $group, int $gid): void
 </dialog>
 <script>
     const projDialog = document.getElementById('projDialog');
+    function pfCostTypeChange() {
+        const t = document.getElementById('pf_cost_type').value;
+        document.getElementById('pf_proj_wrap').style.display = (t === 'openai') ? '' : 'none';
+        const aw = document.getElementById('pf_acct_wrap');
+        aw.style.display = (t === 'twilio') ? '' : 'none';
+        if (t === 'twilio') { document.getElementById('pf_acct_label').textContent = 'Twilio Account SID'; }
+    }
     function openProject(p) {
         p = p || {};
         document.getElementById('projModalTitle').textContent = p.id ? 'プロジェクト箱を編集' : 'プロジェクト箱を追加';
         document.getElementById('pf_id').value = p.id ?? '';
         document.getElementById('pf_name').value = p.name ?? '';
         document.getElementById('pf_product').value = p.product ?? '';
+        document.getElementById('pf_cost_type').value = p.cost_type ?? '';
+        document.getElementById('pf_acct').value = p.cost_account ?? '';
         document.getElementById('pf_proj').value = p.openai_project_id ?? '';
+        pfCostTypeChange();
         document.getElementById('pf_cost').value = (p.monthly_cost === null || p.monthly_cost === undefined) ? '' : p.monthly_cost;
         document.getElementById('pf_currency').value = p.currency || 'USD';
         document.getElementById('pf_secret').value = '';

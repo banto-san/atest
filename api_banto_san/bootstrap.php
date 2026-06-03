@@ -318,6 +318,8 @@ function db(): PDO
             group_id           INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
             name               TEXT    NOT NULL,
             product            TEXT    NOT NULL DEFAULT '',
+            cost_type          TEXT    NOT NULL DEFAULT '',
+            cost_account       TEXT    NOT NULL DEFAULT '',
             openai_project_id  TEXT    NOT NULL DEFAULT '',
             secret_enc         TEXT,
             secret_hint        TEXT,
@@ -365,8 +367,10 @@ function db(): PDO
 
     // projects.product を後付け
     $projCols = array_column($pdo->query('PRAGMA table_info(projects)')->fetchAll(), 'name');
-    if (!in_array('product', $projCols, true)) {
-        $pdo->exec("ALTER TABLE projects ADD COLUMN product TEXT NOT NULL DEFAULT ''");
+    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''"] as $col => $def) {
+        if (!in_array($col, $projCols, true)) {
+            $pdo->exec("ALTER TABLE projects ADD COLUMN $col $def");
+        }
     }
 
     // 既存 cost_project → projects 箱へ自動移行（projects が空のときだけ）
@@ -508,21 +512,53 @@ function group_openai_admin_key(int $gid): ?string
     return null;
 }
 
-/** 箱のコストを取得して保存（OpenAI）。proj紐付けが必要。 */
+/** 箱のコストを取得して保存。cost_type で各社へ振り分け。 */
 function fetch_project_cost(int $gid, array $project): array
 {
-    $projId = trim((string) ($project['openai_project_id'] ?? ''));
-    if ($projId === '') {
-        throw new RuntimeException('この箱に OpenAI プロジェクトID(proj_xxx) が紐付いていません。編集で設定してください。');
+    $type = trim((string) ($project['cost_type'] ?? ''));
+    if ($type === '') {
+        // 後方互換：proj紐付けがあれば OpenAI とみなす
+        $type = trim((string) ($project['openai_project_id'] ?? '')) !== '' ? 'openai' : '';
     }
-    $key = decrypt_secret($project['secret_enc'] ?? null) ?? group_openai_admin_key($gid);
-    if ($key === null) {
-        throw new RuntimeException('OpenAI Admin キー(sk-admin-...)が見つかりません。箱の編集でキーを保存してください。');
+    $secret  = decrypt_secret($project['secret_enc'] ?? null);
+    $account = trim((string) ($project['cost_account'] ?? ''));
+
+    switch ($type) {
+        case 'openai':
+            $key = $secret ?? group_openai_admin_key($gid);
+            if ($key === null) { throw new RuntimeException('OpenAI Admin キー(sk-admin-...)が見つかりません。箱の編集でキーを保存してください。'); }
+            $c = cost_openai($key, trim((string) ($project['openai_project_id'] ?? '')));
+            break;
+        case 'twilio':
+            if ($secret === null) { throw new RuntimeException('Twilioの Auth Token を箱の編集で保存してください。'); }
+            $c = cost_twilio($account, $secret);
+            break;
+        default:
+            throw new RuntimeException('この箱のコスト種別が未設定です。編集でコスト種別（OpenAI / Twilio 等）を選んでください。');
     }
-    $c = cost_openai($key, $projId);
     db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, updated_at = :u WHERE id = :id AND group_id = :g')
         ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
     return $c;
+}
+
+/** Twilio 当月利用額（Account SID + Auth Token）。Usage Records API。 */
+function cost_twilio(string $sid, string $token): array
+{
+    if ($sid === '' || $token === '') {
+        throw new RuntimeException('Twilioは Account SID（アカウントID欄）と Auth Token（キー欄）が必要です。');
+    }
+    $url = 'https://api.twilio.com/2010-04-01/Accounts/' . rawurlencode($sid) . '/Usage/Records/ThisMonth.json?PageSize=200';
+    $r = http_request('GET', $url, ['headers' => ['Authorization: Basic ' . base64_encode($sid . ':' . $token)]]);
+    if ($r['status'] === 401) { throw new RuntimeException('Twilio認証に失敗しました（SID/Auth Tokenをご確認ください）。'); }
+    if ($r['status'] !== 200) { throw new RuntimeException('Twilio APIエラー (HTTP ' . $r['status'] . ')。'); }
+    $d = json_decode($r['body'], true);
+    $sum = 0.0;
+    $cur = 'USD';
+    foreach (($d['usage_records'] ?? []) as $rec) {
+        $sum += (float) ($rec['price'] ?? 0);
+        if (!empty($rec['price_unit'])) { $cur = strtoupper((string) $rec['price_unit']); }
+    }
+    return ['amount' => round(abs($sum), 2), 'currency' => $cur];
 }
 
 /* ------------------------------------------------------------------ *
