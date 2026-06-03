@@ -1164,6 +1164,170 @@ function render_scan_page(array $user, array $group, int $gid): void
 </body></html>
     <?php
 }
+
+/** API追加/編集・プロジェクト箱 編集モーダル＋その操作JS（dashboard/詳細で共用） */
+function render_modals(string $csrf, array $names): void
+{
+    if (!can_edit()) { return; }
+    ?>
+<!-- 追加 / 編集モーダル -->
+<dialog id="apiDialog">
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="save_api">
+        <input type="hidden" name="id" id="f_id" value="">
+        <div class="modal-head" id="modalTitle">API を追加</div>
+        <div class="modal-body">
+            <div class="grid">
+                <div class="field"><label>API名 <span style="color:#b42318">*</span></label><input name="name" id="f_name" required placeholder="例: OpenAI API"></div>
+                <div class="field"><label>provider</label><input name="provider" id="f_provider" placeholder="例: OpenAI / Stripe / Google"></div>
+                <div class="field"><label>サイト (site)</label><input name="site" id="f_site" placeholder="例: s-benri / drive-py"><div class="hint">どのサイト/プロジェクトで使うキーか。空欄も可。</div></div>
+                <div class="field"><label>月額（空欄＝未設定）</label><input name="monthly_cost" id="f_cost" type="number" step="0.01" min="0" placeholder="例: 12000"></div>
+                <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>status</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>担当 (owner)</label><input name="owner" id="f_owner" placeholder="例: 開発チーム"></div>
+                <div class="field full"><label>鍵の在りか (key_location)</label><input name="key_location" id="f_key" placeholder="例: env: OPENAI_API_KEY"><div class="hint">環境変数名など「在りか」。下の「APIキー(値)」とは別です。</div></div>
+                <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
+                    <label><?= icon('lock', 15) ?> APIキー（値）— コスト自動取得用</label>
+                    <input type="password" name="secret" id="f_secret" autocomplete="new-password" placeholder="ここにキーの値を貼る（暗号化保存）">
+                    <div class="hint" id="f_secret_state"></div>
+                    <label style="font-weight:400;font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-top:4px">
+                        <input type="checkbox" name="secret_clear" id="f_secret_clear" value="1" style="width:auto"> 保存済みのキーを削除する
+                    </label>
+                    <div class="hint"><?= encryption_ready()
+                        ? '暗号化して保存します。空欄なら現状維持（既存キーはそのまま）。'
+                        : '⚠ APP_ENCRYPTION_KEY が未設定のため、キー値は保存できません（config.local.php に設定してください）。' ?></div>
+                </div>
+                <div class="field full">
+                    <label>コスト用プロジェクトID（任意・OpenAI等）</label>
+                    <input name="cost_project" id="f_cost_project" placeholder="例: proj_xxxxx（空なら組織全体の合計）">
+                    <div class="hint"><?= icon('refresh', 15) ?> コスト時、IDを入れると<strong>そのプロジェクトのみ</strong>、空なら<strong>組織全体の合計</strong>を取得します。OpenAIのプロジェクト設定で確認できます。</div>
+                </div>
+                <div class="field"><label>請求ページURL (billing_url)</label><input name="billing_url" id="f_billing" type="url" placeholder="https://..."></div>
+                <div class="field"><label>ドキュメントURL (docs_url)</label><input name="docs_url" id="f_docs" type="url" placeholder="https://..."></div>
+                <div class="field full"><label>メモ (notes)</label><textarea name="notes" id="f_notes" rows="3" placeholder="補足・コスト変動の理由など"></textarea></div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('apiDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">保存</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- プロジェクト箱 編集モーダル -->
+<dialog id="projDialog">
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="save_project">
+        <input type="hidden" name="project_id" id="pf_id" value="">
+        <div class="modal-head" id="projModalTitle">プロジェクト箱</div>
+        <div class="modal-body">
+            <div class="grid">
+                <div class="field full"><label>箱の名前 <span style="color:#b42318">*</span></label><input name="name" id="pf_name" required placeholder="例: ECサイト群"></div>
+                <div class="field full"><label>所属プロダクト（API）</label>
+                    <input name="product" id="pf_product" list="productList" placeholder="例: OpenAI API">
+                    <datalist id="productList"><?php foreach ($names as $nm): if ($nm !== '（プロダクト未指定）'): ?><option value="<?= h($nm) ?>"></option><?php endif; endforeach; ?></datalist>
+                    <div class="hint">この箱がどのAPI（プロダクト）の下に表示されるか。</div>
+                </div>
+                <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
+                    <label>コスト自動取得の種別</label>
+                    <select name="cost_type" id="pf_cost_type" onchange="pfCostTypeChange()">
+                        <option value="">なし（手入力）</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="twilio">Twilio</option>
+                    </select>
+                </div>
+                <div class="field full" id="pf_proj_wrap"><label>OpenAI プロジェクトID</label><input name="openai_project_id" id="pf_proj" placeholder="proj_xxxxx（空＝組織全体）"></div>
+                <div class="field full" id="pf_acct_wrap" style="display:none"><label id="pf_acct_label">アカウントID</label><input name="cost_account" id="pf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
+                <div class="field"><label>月額（手入力・任意）</label><input name="monthly_cost" id="pf_cost" type="number" step="0.01" min="0" placeholder="自動取得しない場合"></div>
+                <div class="field"><label>通貨</label><select name="currency" id="pf_currency"><?php foreach (['USD','JPY','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
+                <div class="field full"><label><?= icon('lock', 15) ?> キー / トークン（コスト取得用・暗号化保存）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="pf_secret_state"></div></div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('projDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">保存</button>
+        </div>
+    </form>
+</dialog>
+<script>
+    const projDialog = document.getElementById('projDialog');
+    function pfCostTypeChange() {
+        const t = document.getElementById('pf_cost_type').value;
+        document.getElementById('pf_proj_wrap').style.display = (t === 'openai') ? '' : 'none';
+        const aw = document.getElementById('pf_acct_wrap');
+        aw.style.display = (t === 'twilio') ? '' : 'none';
+        if (t === 'twilio') { document.getElementById('pf_acct_label').textContent = 'Twilio Account SID'; }
+    }
+    function openProject(p) {
+        p = p || {};
+        document.getElementById('projModalTitle').textContent = p.id ? 'プロジェクト箱を編集' : 'プロジェクト箱を追加';
+        document.getElementById('pf_id').value = p.id ?? '';
+        document.getElementById('pf_name').value = p.name ?? '';
+        document.getElementById('pf_product').value = p.product ?? '';
+        document.getElementById('pf_cost_type').value = p.cost_type ?? '';
+        document.getElementById('pf_acct').value = p.cost_account ?? '';
+        document.getElementById('pf_proj').value = p.openai_project_id ?? '';
+        pfCostTypeChange();
+        document.getElementById('pf_cost').value = (p.monthly_cost === null || p.monthly_cost === undefined) ? '' : p.monthly_cost;
+        document.getElementById('pf_currency').value = p.currency || 'USD';
+        document.getElementById('pf_secret').value = '';
+        document.getElementById('pf_secret_state').textContent = p.secret_hint ? ('現在: ' + p.secret_hint + '（変更時のみ入力）') : 'Adminキー未保存';
+        projDialog.showModal();
+    }
+    const dialog = document.getElementById('apiDialog');
+    function openCreate() {
+        document.getElementById('modalTitle').textContent = 'API を追加';
+        document.getElementById('f_id').value = '';
+        for (const f of ['name','provider','site','cost','owner','key','billing','docs','notes','secret','cost_project']) {
+            const el = document.getElementById('f_' + f); if (el) el.value = '';
+        }
+        document.getElementById('f_currency').value = 'JPY';
+        document.getElementById('f_status').value = 'unknown';
+        document.getElementById('f_secret_clear').checked = false;
+        document.getElementById('f_secret_state').textContent = '';
+        dialog.showModal();
+    }
+    function openEdit(a) {
+        document.getElementById('modalTitle').textContent = 'API を編集';
+        document.getElementById('f_id').value      = a.id ?? '';
+        document.getElementById('f_name').value     = a.name ?? '';
+        document.getElementById('f_provider').value = a.provider ?? '';
+        document.getElementById('f_site').value     = a.site ?? '';
+        document.getElementById('f_cost').value     = (a.monthly_cost === null || a.monthly_cost === undefined) ? '' : a.monthly_cost;
+        document.getElementById('f_currency').value = a.currency ?? 'JPY';
+        document.getElementById('f_status').value   = a.status ?? 'unknown';
+        document.getElementById('f_owner').value    = a.owner ?? '';
+        document.getElementById('f_key').value      = a.key_location ?? '';
+        document.getElementById('f_billing').value  = a.billing_url ?? '';
+        document.getElementById('f_docs').value     = a.docs_url ?? '';
+        document.getElementById('f_notes').value    = a.notes ?? '';
+        document.getElementById('f_cost_project').value = a.cost_project ?? '';
+        document.getElementById('f_secret').value    = '';
+        document.getElementById('f_secret_clear').checked = false;
+        document.getElementById('f_secret_state').textContent =
+            a.secret_hint ? ('現在: ' + a.secret_hint + '（変更する時だけ入力）') : 'キー未保存';
+        dialog.showModal();
+    }
+    // トースト＋コピー＋with_secrets（共用）
+    function abtToast(msg) {
+        const t = document.getElementById('abtToast'); if (!t) return;
+        t.textContent = msg; t.classList.add('show');
+        clearTimeout(t._tid); t._tid = setTimeout(() => t.classList.remove('show'), 1500);
+    }
+    function copyText(t) {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(t).then(() => abtToast('コピー: ' + t)).catch(() => abtToast('コピーできませんでした'));
+        } else {
+            const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); abtToast('コピー: ' + t); } catch (e) { abtToast('コピーできませんでした'); }
+            ta.remove();
+        }
+    }
+</script>
+    <?php
+}
 ?>
 <?php
 /* ================================================================== *
@@ -1241,6 +1405,11 @@ if ($route === 'product'):
     <div class="crumb"><a href="index.php">ダッシュボード</a> ／ <?= h($pname) ?></div>
     <div class="topbar">
         <h2><?= icon('product') ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
+        <span class="grow"></span>
+        <?php if ($editable): ?>
+            <button type="button" class="btn" onclick="openProject({product: <?= htmlspecialchars(json_encode($pname, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>})"><?= icon('plus', 15) ?> 箱を追加</button>
+            <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
+        <?php endif; ?>
     </div>
 
     <!-- ヒーロー：合計＋箱別ドーナツ -->
@@ -1306,41 +1475,58 @@ if ($route === 'product'):
         </div>
     </div>
 
-    <!-- 箱とURLの一覧 -->
+    <!-- 箱とURLの一覧（クリックで開閉・既定は閉じる） -->
     <div class="panel" style="margin-bottom:18px">
-        <h3>プロジェクト箱とURL</h3>
+        <h3>プロジェクト箱とURL <span class="muted" style="font-weight:400">（箱をクリックでURLを展開）</span></h3>
         <table>
-            <thead><tr><th>箱 / URL</th><th>サイト</th><th>月額</th></tr></thead>
+            <thead><tr><th style="width:28px"></th><th>箱 / URL</th><th>サイト</th><th>月額</th><?php if ($editable): ?><th class="hide-sm">操作</th><?php endif; ?></tr></thead>
             <tbody>
-            <?php foreach ($boxList as $bl): $b = $bl['box']; ?>
-                <tr class="group-head">
+            <?php $bi = 0; foreach ($boxList as $bl): $bi++; $b = $bl['box']; ?>
+                <tr class="group-head" onclick="toggleBox(<?= $bi ?>)">
+                    <td><span id="bc<?= $bi ?>" class="caret"><?= icon('chevron', 16) ?></span></td>
                     <td><?= icon('box') ?> <strong><?= h($b['name']) ?></strong> <span class="muted">（<?= count($bl['urls']) ?> URL）</span></td>
                     <td class="muted"><?= h(implode('、', array_slice(array_map('strval', $bl['sites']), 0, 4))) ?><?= count($bl['sites']) > 4 ? ' ほか' : '' ?></td>
                     <td class="cost"><?= fmt_money($b['monthly_cost'] === null ? null : (float) $b['monthly_cost'], $b['currency'] ?: 'USD') ?><?php if (($b['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($b['currency'] ?: 'USD') ?> <?= number_format((float) $b['balance'], 2) ?></div><?php endif; ?></td>
+                    <?php if ($editable): ?>
+                    <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
+                        <?php if (($b['cost_type'] ?? '') !== '' || trim((string) $b['openai_project_id']) !== ''): ?>
+                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $b['id'] ?>"><button class="link" type="submit" title="コスト取得"><?= icon('refresh', 15) ?> コスト</button></form>
+                        <?php endif; ?>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$b["id"],"name"=>$b["name"],"product"=>$b["product"] ?? "","cost_type"=>$b["cost_type"] ?? "","cost_account"=>$b["cost_account"] ?? "","openai_project_id"=>$b["openai_project_id"],"secret_hint"=>$b["secret_hint"],"monthly_cost"=>$b["monthly_cost"],"currency"=>$b["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($b['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $b['id'] ?>"><button class="link danger" type="submit">削除</button></form>
+                    </td>
+                    <?php endif; ?>
                 </tr>
-                <?php foreach ($bl['urls'] as $f): ?>
-                <tr>
-                    <td style="padding-left:28px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></td>
-                    <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
+                <?php foreach ($bl['urls'] as $f):
+                    $pathStr = usage_site($f) . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : ''); ?>
+                <tr class="box<?= $bi ?>-url" style="display:none">
                     <td></td>
+                    <td style="padding-left:20px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
+                        <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
+                    <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
+                    <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
                 </tr>
                 <?php endforeach; ?>
             <?php endforeach; ?>
-            <?php if ($punassigned): $uurls = dedup_urls($punassigned); ?>
-                <tr class="group-head">
+            <?php if ($punassigned): $uurls = dedup_urls($punassigned); $bi++; ?>
+                <tr class="group-head" onclick="toggleBox(<?= $bi ?>)">
+                    <td><span id="bc<?= $bi ?>" class="caret"><?= icon('chevron', 16) ?></span></td>
                     <td><?= icon('box') ?> <strong>未割当</strong> <span class="muted">（<?= count($uurls) ?> URL）</span></td>
-                    <td class="muted">—</td><td class="cost">—</td>
+                    <td class="muted">—</td><td class="cost">—</td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
                 </tr>
-                <?php foreach ($uurls as $f): ?>
-                <tr>
-                    <td style="padding-left:28px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></td>
-                    <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
+                <?php foreach ($uurls as $f):
+                    $pathStr = usage_site($f) . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : ''); ?>
+                <tr class="box<?= $bi ?>-url" style="display:none">
                     <td></td>
+                    <td style="padding-left:20px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
+                        <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
+                    <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
+                    <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
             <?php if (!$boxList && !$punassigned): ?>
-                <tr><td colspan="3" class="muted" style="text-align:center;padding:24px">このプロダクトにはまだ箱もURLもありません。</td></tr>
+                <tr><td colspan="<?= $editable ? 5 : 4 ?>" class="muted" style="text-align:center;padding:24px">このプロダクトにはまだ箱もURLもありません。</td></tr>
             <?php endif; ?>
             </tbody>
         </table>
@@ -1349,6 +1535,16 @@ if ($route === 'product'):
     <a class="btn" href="index.php"><?= icon('left', 15) ?> ダッシュボードに戻る</a>
 </main>
 </div>
+<div id="abtToast"></div>
+<?php render_modals($csrf, $names); ?>
+<script>
+    function toggleBox(bi) {
+        const caret = document.getElementById('bc' + bi);
+        const open = !caret.classList.contains('open');
+        document.querySelectorAll('.box' + bi + '-url').forEach(r => r.style.display = open ? 'table-row' : 'none');
+        caret.classList.toggle('open', open);
+    }
+</script>
 </body></html>
 <?php exit; endif; ?>
 <!DOCTYPE html>
@@ -1520,7 +1716,7 @@ if ($route === 'product'):
     </div>
     <?php endif; ?>
     <?php if ($projects): ?>
-    <details class="stat" style="width:100%;margin-bottom:10px" <?= $editable ? 'open' : '' ?>>
+    <details class="stat" style="width:100%;margin-bottom:10px">
         <summary style="cursor:pointer;font-weight:600"><?= icon('box') ?> プロジェクト箱の一覧・管理（<?= count($projects) ?>）</summary>
         <table style="margin-top:8px">
             <thead><tr><th>箱</th><th>OpenAI proj</th><th>月額</th><th>URL数</th><?php if ($editable): ?><th>操作</th><?php endif; ?></tr></thead>
@@ -1655,149 +1851,7 @@ if ($route === 'product'):
 </div>
 <div id="abtToast"></div>
 
-<?php if ($editable): ?>
-<!-- 追加 / 編集モーダル -->
-<dialog id="apiDialog">
-    <form method="post">
-        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-        <input type="hidden" name="action" value="save_api">
-        <input type="hidden" name="id" id="f_id" value="">
-        <div class="modal-head" id="modalTitle">API を追加</div>
-        <div class="modal-body">
-            <div class="grid">
-                <div class="field"><label>API名 <span style="color:#b42318">*</span></label><input name="name" id="f_name" required placeholder="例: OpenAI API"></div>
-                <div class="field"><label>provider</label><input name="provider" id="f_provider" placeholder="例: OpenAI / Stripe / Google"></div>
-                <div class="field"><label>サイト (site)</label><input name="site" id="f_site" placeholder="例: s-benri / drive-py"><div class="hint">どのサイト/プロジェクトで使うキーか。空欄も可。</div></div>
-                <div class="field"><label>月額（空欄＝未設定）</label><input name="monthly_cost" id="f_cost" type="number" step="0.01" min="0" placeholder="例: 12000"></div>
-                <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
-                <div class="field"><label>status</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
-                <div class="field"><label>担当 (owner)</label><input name="owner" id="f_owner" placeholder="例: 開発チーム"></div>
-                <div class="field full"><label>鍵の在りか (key_location)</label><input name="key_location" id="f_key" placeholder="例: env: OPENAI_API_KEY"><div class="hint">環境変数名など「在りか」。下の「APIキー(値)」とは別です。</div></div>
-                <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
-                    <label><?= icon('lock', 15) ?> APIキー（値）— コスト自動取得用</label>
-                    <input type="password" name="secret" id="f_secret" autocomplete="new-password" placeholder="ここにキーの値を貼る（暗号化保存）">
-                    <div class="hint" id="f_secret_state"></div>
-                    <label style="font-weight:400;font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-top:4px">
-                        <input type="checkbox" name="secret_clear" id="f_secret_clear" value="1" style="width:auto"> 保存済みのキーを削除する
-                    </label>
-                    <div class="hint"><?= encryption_ready()
-                        ? '暗号化して保存します。空欄なら現状維持（既存キーはそのまま）。'
-                        : '⚠ APP_ENCRYPTION_KEY が未設定のため、キー値は保存できません（config.local.php に設定してください）。' ?></div>
-                </div>
-                <div class="field full">
-                    <label>コスト用プロジェクトID（任意・OpenAI等）</label>
-                    <input name="cost_project" id="f_cost_project" placeholder="例: proj_xxxxx（空なら組織全体の合計）">
-                    <div class="hint"><?= icon('refresh', 15) ?> コスト時、IDを入れると<strong>そのプロジェクトのみ</strong>、空なら<strong>組織全体の合計</strong>を取得します。OpenAIのプロジェクト設定で確認できます。</div>
-                </div>
-                <div class="field"><label>請求ページURL (billing_url)</label><input name="billing_url" id="f_billing" type="url" placeholder="https://..."></div>
-                <div class="field"><label>ドキュメントURL (docs_url)</label><input name="docs_url" id="f_docs" type="url" placeholder="https://..."></div>
-                <div class="field full"><label>メモ (notes)</label><textarea name="notes" id="f_notes" rows="3" placeholder="補足・コスト変動の理由など"></textarea></div>
-            </div>
-        </div>
-        <div class="modal-foot">
-            <button type="button" onclick="document.getElementById('apiDialog').close()">キャンセル</button>
-            <button type="submit" class="primary">保存</button>
-        </div>
-    </form>
-</dialog>
-
-<!-- プロジェクト箱 編集モーダル -->
-<dialog id="projDialog">
-    <form method="post">
-        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-        <input type="hidden" name="action" value="save_project">
-        <input type="hidden" name="project_id" id="pf_id" value="">
-        <div class="modal-head" id="projModalTitle">プロジェクト箱</div>
-        <div class="modal-body">
-            <div class="grid">
-                <div class="field full"><label>箱の名前 <span style="color:#b42318">*</span></label><input name="name" id="pf_name" required placeholder="例: ECサイト群"></div>
-                <div class="field full"><label>所属プロダクト（API）</label>
-                    <input name="product" id="pf_product" list="productList" placeholder="例: OpenAI API">
-                    <datalist id="productList"><?php foreach ($names as $nm): if ($nm !== '（プロダクト未指定）'): ?><option value="<?= h($nm) ?>"></option><?php endif; endforeach; ?></datalist>
-                    <div class="hint">この箱がどのAPI（プロダクト）の下に表示されるか。</div>
-                </div>
-                <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
-                    <label>コスト自動取得の種別</label>
-                    <select name="cost_type" id="pf_cost_type" onchange="pfCostTypeChange()">
-                        <option value="">なし（手入力）</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="twilio">Twilio</option>
-                    </select>
-                </div>
-                <div class="field full" id="pf_proj_wrap"><label>OpenAI プロジェクトID</label><input name="openai_project_id" id="pf_proj" placeholder="proj_xxxxx（空＝組織全体）"></div>
-                <div class="field full" id="pf_acct_wrap" style="display:none"><label id="pf_acct_label">アカウントID</label><input name="cost_account" id="pf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
-                <div class="field"><label>月額（手入力・任意）</label><input name="monthly_cost" id="pf_cost" type="number" step="0.01" min="0" placeholder="自動取得しない場合"></div>
-                <div class="field"><label>通貨</label><select name="currency" id="pf_currency"><?php foreach (['USD','JPY','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
-                <div class="field full"><label><?= icon('lock', 15) ?> キー / トークン（コスト取得用・暗号化保存）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="pf_secret_state"></div></div>
-            </div>
-        </div>
-        <div class="modal-foot">
-            <button type="button" onclick="document.getElementById('projDialog').close()">キャンセル</button>
-            <button type="submit" class="primary">保存</button>
-        </div>
-    </form>
-</dialog>
-<script>
-    const projDialog = document.getElementById('projDialog');
-    function pfCostTypeChange() {
-        const t = document.getElementById('pf_cost_type').value;
-        document.getElementById('pf_proj_wrap').style.display = (t === 'openai') ? '' : 'none';
-        const aw = document.getElementById('pf_acct_wrap');
-        aw.style.display = (t === 'twilio') ? '' : 'none';
-        if (t === 'twilio') { document.getElementById('pf_acct_label').textContent = 'Twilio Account SID'; }
-    }
-    function openProject(p) {
-        p = p || {};
-        document.getElementById('projModalTitle').textContent = p.id ? 'プロジェクト箱を編集' : 'プロジェクト箱を追加';
-        document.getElementById('pf_id').value = p.id ?? '';
-        document.getElementById('pf_name').value = p.name ?? '';
-        document.getElementById('pf_product').value = p.product ?? '';
-        document.getElementById('pf_cost_type').value = p.cost_type ?? '';
-        document.getElementById('pf_acct').value = p.cost_account ?? '';
-        document.getElementById('pf_proj').value = p.openai_project_id ?? '';
-        pfCostTypeChange();
-        document.getElementById('pf_cost').value = (p.monthly_cost === null || p.monthly_cost === undefined) ? '' : p.monthly_cost;
-        document.getElementById('pf_currency').value = p.currency || 'USD';
-        document.getElementById('pf_secret').value = '';
-        document.getElementById('pf_secret_state').textContent = p.secret_hint ? ('現在: ' + p.secret_hint + '（変更時のみ入力）') : 'Adminキー未保存';
-        projDialog.showModal();
-    }
-    const dialog = document.getElementById('apiDialog');
-    function openCreate() {
-        document.getElementById('modalTitle').textContent = 'API を追加';
-        document.getElementById('f_id').value = '';
-        for (const f of ['name','provider','site','cost','owner','key','billing','docs','notes','secret','cost_project']) {
-            const el = document.getElementById('f_' + f); if (el) el.value = '';
-        }
-        document.getElementById('f_currency').value = 'JPY';
-        document.getElementById('f_status').value = 'unknown';
-        document.getElementById('f_secret_clear').checked = false;
-        document.getElementById('f_secret_state').textContent = '';
-        dialog.showModal();
-    }
-    function openEdit(a) {
-        document.getElementById('modalTitle').textContent = 'API を編集';
-        document.getElementById('f_id').value      = a.id ?? '';
-        document.getElementById('f_name').value     = a.name ?? '';
-        document.getElementById('f_provider').value = a.provider ?? '';
-        document.getElementById('f_site').value     = a.site ?? '';
-        document.getElementById('f_cost').value     = (a.monthly_cost === null || a.monthly_cost === undefined) ? '' : a.monthly_cost;
-        document.getElementById('f_currency').value = a.currency ?? 'JPY';
-        document.getElementById('f_status').value   = a.status ?? 'unknown';
-        document.getElementById('f_owner').value    = a.owner ?? '';
-        document.getElementById('f_key').value      = a.key_location ?? '';
-        document.getElementById('f_billing').value  = a.billing_url ?? '';
-        document.getElementById('f_docs').value     = a.docs_url ?? '';
-        document.getElementById('f_notes').value    = a.notes ?? '';
-        document.getElementById('f_cost_project').value = a.cost_project ?? '';
-        document.getElementById('f_secret').value    = '';
-        document.getElementById('f_secret_clear').checked = false;
-        document.getElementById('f_secret_state').textContent =
-            a.secret_hint ? ('現在: ' + a.secret_hint + '（変更する時だけ入力）') : 'キー未保存';
-        dialog.showModal();
-    }
-</script>
-<?php endif; ?>
+<?php render_modals($csrf, $names); ?>
 <script>
     // ---- ドラッグ＆ドロップ並べ替え（PC、リロードなし） ----
     const ABT_CSRF = '<?= h($csrf) ?>';
