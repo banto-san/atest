@@ -194,6 +194,7 @@ function gstyles(): void { ?>
     :root{--bg:#f5f6f8;--card:#fff;--line:#e3e6ea;--ink:#1f2733;--muted:#8a93a0;--accent:#2563eb;--accent-d:#1d4ed8;--ok-bg:#e7f6ec;--ok-ink:#1a7f43;--err-bg:#fdecec;--err-ink:#b42318;}
     *{box-sizing:border-box;}
     .ic{vertical-align:-0.16em;}
+    .brandlogo{height:24px;width:auto;vertical-align:-6px;}
     header.app h1 .ic{vertical-align:-0.18em;}
     body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;line-height:1.6;}
     header.app{background:#0f172a;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
@@ -236,7 +237,7 @@ function gstyles(): void { ?>
 </head>
 <body>
 <header class="app">
-    <h1><?= icon('noren', 20) ?> <?= h(APP_NAME) ?></h1>
+    <h1><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></h1>
     <span style="font-size:13px;color:#94a3b8">グループ管理</span>
     <span class="spacer"></span>
     <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
