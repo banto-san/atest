@@ -118,7 +118,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
  * ------------------------------------------------------------------ */
 function now(): string { return date('Y-m-d H:i:s'); }
 
-function h(?string $s): string { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
+function h($s = ''): string { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
 
 function csrf_token(): string
 {

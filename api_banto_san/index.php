@@ -579,7 +579,7 @@ $sites = [];
 $sfStmt = $pdo->prepare('SELECT DISTINCT u.repo, u.file FROM usages u JOIN apis a ON a.id = u.api_id WHERE a.group_id = :gid');
 $sfStmt->execute([':gid' => $gid]);
 foreach ($sfStmt->fetchAll() as $r) { $sites[usage_site($r)] = 1; }
-$sites = array_keys($sites);
+$sites = array_map('strval', array_keys($sites));   // 数字名サイト対策で文字列化
 sort($sites);
 $legacyCount = 0;
 
