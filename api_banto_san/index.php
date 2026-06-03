@@ -505,6 +505,29 @@ function fmt_money(?float $cost, string $cur): string
     return h($cur) . ' ' . $n;
 }
 
+/** 通貨別合計を文字列に（例: "JPY 12,000　USD 30"） */
+function money_totals(array $rows): string
+{
+    $t = [];
+    foreach ($rows as $r) {
+        if ($r['monthly_cost'] !== null) {
+            $c = $r['currency'] ?: 'JPY';
+            $t[$c] = ($t[$c] ?? 0) + (float) $r['monthly_cost'];
+        }
+    }
+    if (!$t) { return '—'; }
+    ksort($t);
+    return implode('　', array_map(static fn($c, $v) => $c . ' ' . number_format($v, (fmod($v,1.0)===0.0)?0:2), array_keys($t), $t));
+}
+
+/** その使用箇所が「キーが定義されているファイル」か（.env や NAME=値 の行） */
+function is_key_def_usage(array $u): bool
+{
+    $base = strtolower(basename((string) $u['file']));
+    if (strncmp($base, '.env', 4) === 0) { return true; }
+    return (bool) preg_match('/\b[A-Z][A-Z0-9_]*(?:API_?KEY|SECRET|TOKEN|ACCESS_?KEY|_KEY)\b\s*[:=]/', (string) $u['snippet']);
+}
+
 /** 共通スタイル */
 function render_styles(): void { ?>
 <style>
@@ -991,163 +1014,107 @@ function render_scan_page(array $user, array $group, int $gid): void
         <?php endif; ?>
     </form>
 
-    <!-- キー × サイト × コスト ビュー（API別グループ） -->
+    <!-- プロダクト → プロジェクト → ファイル ビュー -->
     <?php if (!$apis): ?>
         <div class="empty">該当するAPIがありません。<?= $editable ? '「＋ API を追加」から登録するか、「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
-    <?php $colspan = $editable ? 7 : 6; ?>
-    <p class="hint" style="margin:0 0 8px">行（API）をクリックすると、サイトごとの内訳が開きます。</p>
+    <p class="hint" style="margin:0 0 8px">行をクリックで展開：プロダクト → プロジェクト → キーが入っているファイル。</p>
     <div class="table-wrap">
     <table>
         <thead>
             <tr>
                 <th style="width:28px"></th>
-                <th>サイト</th>
-                <th>キー（鍵のありか）</th>
+                <th>プロダクト / プロジェクト / ファイル</th>
                 <th>月額</th>
-                <th>status</th>
-                <th class="hide-sm note-cell">メモ / 担当</th>
-                <?php if ($editable): ?><th style="width:96px"></th><?php endif; ?>
+                <th class="hide-sm">内訳 / 操作</th>
             </tr>
         </thead>
         <tbody>
         <?php $gi = 0; foreach ($groups as $gname => $rows): $gi++;
             $first = $rows[0];
-            // 通貨別の月額合計
-            $curTotals = [];
+            // プロジェクト単位にまとめる（OpenAIプロジェクト優先、無ければサイト）
+            $projects = [];
             foreach ($rows as $r) {
-                if ($r['monthly_cost'] !== null) {
-                    $c = $r['currency'] ?: 'JPY';
-                    $curTotals[$c] = ($curTotals[$c] ?? 0) + (float) $r['monthly_cost'];
+                if (trim((string) $r['cost_project']) !== '') {
+                    $pk = 'P:' . $r['cost_project'];
+                    $plabel = '🗂 ' . $r['cost_project'];
+                } else {
+                    $site = $r['site'] !== '' ? $r['site'] : '未設定';
+                    $pk = 'S:' . $site;
+                    $plabel = '🌐 ' . $site;
                 }
+                if (!isset($projects[$pk])) { $projects[$pk] = ['label' => $plabel, 'entries' => []]; }
+                $projects[$pk]['entries'][] = $r;
             }
-            ksort($curTotals);
-            $totalStr = $curTotals
-                ? implode('　', array_map(static fn($c, $v) => $c . ' ' . number_format($v, (fmod($v,1.0)===0.0)?0:2), array_keys($curTotals), $curTotals))
-                : '—';
-            $restcol = $colspan - 4;
+            $siteSet = [];
+            foreach ($rows as $r) { if ($r['site'] !== '') { $siteSet[$r['site']] = 1; } }
+            $nProjects = count($projects);
+            $nSites = count($siteSet);
         ?>
-            <tr class="group-head" data-name="<?= h($gname) ?>" data-gi="<?= $gi ?>" onclick="toggleGroup(<?= $gi ?>)"
+            <tr class="group-head" data-name="<?= h($gname) ?>" data-gi="<?= $gi ?>" onclick="toggleProduct(<?= $gi ?>)"
                 <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event,this)" ondragleave="gDragLeave(this)" ondrop="gDrop(event,this)"' : '' ?>>
-                <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え">⠿</span><?php endif; ?><span id="gtg<?= $gi ?>" class="caret">▶</span></td>
-                <td colspan="2">
+                <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え">⠿</span><?php endif; ?><span id="pc<?= $gi ?>" class="caret">▶</span></td>
+                <td>
                     🔷 <strong><?= h($gname) ?></strong>
                     <?php if ($first['provider']): ?><span class="muted">（<?= h($first['provider']) ?>）</span><?php endif; ?>
-                    <?php if ($first['docs_url']): ?><a href="<?= h($first['docs_url']) ?>" target="_blank" rel="noopener" class="muted" title="ドキュメント" onclick="event.stopPropagation()">📄</a><?php endif; ?>
-                    <span class="muted" style="font-weight:400">／ <?= count($rows) ?> サイト</span>
+                    <?php if ($first['docs_url']): ?><a href="<?= h($first['docs_url']) ?>" target="_blank" rel="noopener" class="muted" onclick="event.stopPropagation()" title="ドキュメント">📄</a><?php endif; ?>
                 </td>
-                <td class="cost group-cost"><?= h($totalStr) ?></td>
-                <td colspan="<?= $restcol ?>" style="text-align:right;white-space:nowrap">
+                <td class="cost group-cost"><?= h(money_totals($rows)) ?></td>
+                <td class="hide-sm" style="white-space:nowrap">
+                    <span class="muted"><?= $nProjects ?> プロジェクト / <?= $nSites ?> サイト</span>
                     <?php if ($editable): ?>
                         <form method="post" style="display:inline" onclick="event.stopPropagation()">
-                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                            <input type="hidden" name="action" value="reorder">
-                            <input type="hidden" name="name" value="<?= h($gname) ?>">
-                            <input type="hidden" name="dir" value="up">
+                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder">
+                            <input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="up">
                             <button class="link" type="submit" title="上へ">▲</button>
                         </form>
                         <form method="post" style="display:inline" onclick="event.stopPropagation()">
-                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                            <input type="hidden" name="action" value="reorder">
-                            <input type="hidden" name="name" value="<?= h($gname) ?>">
-                            <input type="hidden" name="dir" value="down">
+                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder">
+                            <input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="down">
                             <button class="link" type="submit" title="下へ">▼</button>
                         </form>
                     <?php endif; ?>
                 </td>
             </tr>
-        <?php foreach ($rows as $a):
-            $aid = (int) $a['id'];
-            $uses = $usagesByApi[$aid] ?? [];
+        <?php $pj = 0; foreach ($projects as $proj): $pj++;
+            $pents = $proj['entries'];
+            // キーが定義されているファイル（重複排除）
+            $keyFiles = [];
+            foreach ($pents as $pe) {
+                foreach (($usagesByApi[(int) $pe['id']] ?? []) as $u) {
+                    if (is_key_def_usage($u)) { $keyFiles[$u['repo'] . '|' . $u['file']] = $u; }
+                }
+            }
         ?>
-            <tr class="api-row g<?= $gi ?>-row" style="display:none">
-                <td>
-                    <?php if ($uses): ?>
-                        <button class="link" type="button" onclick="toggleUsage(<?= $aid ?>)" id="tg<?= $aid ?>" title="使用箇所を表示">▶</button>
-                    <?php endif; ?>
-                </td>
-                <td>
-                    <?php if ($a['site'] !== ''): ?><strong>🌐 <?= h($a['site']) ?></strong><?php else: ?><span class="muted">（サイト未設定）</span><?php endif; ?>
-                    <div class="hint"><?= (int) $a['usage_count'] ?> 箇所</div>
-                </td>
-                <td>
-                    <?php if ($a['key_location'] !== ''): ?>🔑 <?= h($a['key_location']) ?><?php else: ?><span class="muted">—</span><?php endif; ?>
-                    <?php if (!empty($a['secret_hint'])): ?><div class="hint">🔐 <?= h($a['secret_hint']) ?> <span class="muted">保存済み</span></div><?php endif; ?>
-                </td>
-                <td class="cost">
-                    <?= fmt_money($a['monthly_cost'] === null ? null : (float) $a['monthly_cost'], $a['currency']) ?>
-                    <?php if ($a['billing_url']): ?><a href="<?= h($a['billing_url']) ?>" target="_blank" rel="noopener" class="muted" title="請求ページ">💳</a><?php endif; ?>
-                </td>
-                <td><span class="pill <?= h($a['status']) ?>"><?= h(STATUSES[$a['status']] ?? $a['status']) ?></span></td>
-                <td class="hide-sm note-cell">
-                    <?php if ($a['owner']): ?><div class="muted">👤 <?= h($a['owner']) ?></div><?php endif; ?>
-                    <?= nl2br(h(mb_strimwidth($a['notes'], 0, 60, '…'))) ?>
-                </td>
-                <?php if ($editable): ?>
-                <td>
-                    <?php $aEdit = $a; unset($aEdit['secret_enc'], $aEdit['secret_fp']); ?>
-                    <button class="link" type="button"
-                        onclick='openEdit(<?= json_encode($aEdit, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                    <?php if (cost_supported($a['provider']) && !empty($a['secret_hint'])): ?>
-                    <form method="post" style="display:inline" title="保存したキーでコストを取得して月額を更新">
-                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                        <input type="hidden" name="action" value="fetch_cost">
-                        <input type="hidden" name="id" value="<?= $aid ?>">
-                        <button class="link" type="submit">⟳コスト</button>
-                    </form>
-                    <?php endif; ?>
-                    <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($a['name']) ?>（<?= h($a['site'] ?: 'サイト未設定') ?>）」を削除しますか？')">
-                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                        <input type="hidden" name="action" value="delete_api">
-                        <input type="hidden" name="id" value="<?= $aid ?>">
-                        <button class="link danger" type="submit">削除</button>
-                    </form>
-                </td>
-                <?php endif; ?>
-            </tr>
-
-            <!-- ドリルダウン：使用箇所（サブ情報） -->
-            <tr class="usages g<?= $gi ?>-use" id="us<?= $aid ?>" style="display:none">
-                <td colspan="<?= $colspan ?>">
-                    <table>
-                        <thead><tr><th>repo</th><th>file</th><th>line</th><th>snippet</th><?php if ($editable): ?><th></th><?php endif; ?></tr></thead>
-                        <tbody>
-                        <?php foreach ($uses as $u): ?>
-                            <tr>
-                                <td><?= h($u['repo']) ?></td>
-                                <td><?= h($u['file']) ?></td>
-                                <td><?= $u['line'] !== null ? (int) $u['line'] : '' ?></td>
-                                <td><?php if ($u['snippet'] !== ''): ?><code><?= h($u['snippet']) ?></code><?php endif; ?></td>
-                                <?php if ($editable): ?>
-                                <td>
-                                    <form method="post" onsubmit="return confirm('この使用箇所を削除しますか？')">
-                                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                        <input type="hidden" name="action" value="delete_usage">
-                                        <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
-                                        <button class="link danger" type="submit">削除</button>
-                                    </form>
-                                </td>
-                                <?php endif; ?>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <?php if ($editable): ?>
-                    <form method="post" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center">
-                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                        <input type="hidden" name="action" value="add_usage">
-                        <input type="hidden" name="api_id" value="<?= $aid ?>">
-                        <input name="repo" placeholder="repo" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px">
-                        <input name="file" placeholder="file" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px">
-                        <input name="line" placeholder="line" type="number" style="width:80px;padding:6px 8px;border:1px solid var(--line);border-radius:7px">
-                        <input name="snippet" placeholder="snippet（任意）" style="flex:1;min-width:160px;padding:6px 8px;border:1px solid var(--line);border-radius:7px">
-                        <button type="submit">使用箇所を追加</button>
-                    </form>
-                    <?php endif; ?>
+            <tr class="prod<?= $gi ?> p<?= $gi ?>-proj" style="display:none">
+                <td style="text-align:right"><span id="jc<?= $gi ?>_<?= $pj ?>" class="caret" onclick="toggleProj(<?= $gi ?>,<?= $pj ?>)" style="cursor:pointer">▶</span></td>
+                <td style="padding-left:24px"><?= h($proj['label']) ?> <span class="muted">（<?= count($pents) ?>件）</span></td>
+                <td class="cost"><?= h(money_totals($pents)) ?></td>
+                <td class="hide-sm" style="white-space:nowrap">
+                    <?php if ($editable): foreach ($pents as $pe): $peEdit = $pe; unset($peEdit['secret_enc'], $peEdit['secret_fp']); ?>
+                        <span class="muted" title="<?= h($pe['site'] ?: 'サイト未設定') ?>">·</span>
+                        <button class="link" type="button" onclick='openEdit(<?= json_encode($peEdit, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <?php if (cost_supported($pe['provider']) && !empty($pe['secret_hint'])): ?>
+                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_cost"><input type="hidden" name="id" value="<?= (int) $pe['id'] ?>"><button class="link" type="submit" title="コスト取得">⟳</button></form>
+                        <?php endif; ?>
+                        <form method="post" style="display:inline" onsubmit="return confirm('削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_api"><input type="hidden" name="id" value="<?= (int) $pe['id'] ?>"><button class="link danger" type="submit">削除</button></form>
+                    <?php endforeach; endif; ?>
                 </td>
             </tr>
-        <?php endforeach; /* rows */ ?>
-        <?php endforeach; /* groups */ ?>
+            <!-- キーが入っているファイル -->
+            <tr class="prod<?= $gi ?> p<?= $gi ?>j<?= $pj ?>-file" style="display:none">
+                <td></td>
+                <td colspan="3" style="padding-left:48px">
+                    <div class="hint" style="margin-bottom:4px">🔑 キーが入っているファイル</div>
+                    <?php if (!$keyFiles): ?>
+                        <span class="muted">（スキャンで検出されたキー定義ファイルはありません。鍵の在りか: <?= h($pents[0]['key_location'] ?: '不明') ?>）</span>
+                    <?php else: foreach ($keyFiles as $u): ?>
+                        <div>📄 <code><?= h($u['repo']) ?><?= $u['repo'] !== '' ? ' / ' : '' ?><?= h($u['file']) ?><?= $u['line'] !== null ? ':' . (int) $u['line'] : '' ?></code></div>
+                    <?php endforeach; endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; /* projects */ ?>
+        <?php endforeach; /* products */ ?>
         </tbody>
     </table>
     </div>
@@ -1262,7 +1229,7 @@ function render_scan_page(array $user, array $group, int $gid): void
     }
     function groupRows(gi) {
         return [document.querySelector('tr.group-head[data-gi="' + gi + '"]'),
-                ...document.querySelectorAll('.g' + gi + '-row, .g' + gi + '-use')];
+                ...document.querySelectorAll('.prod' + gi)];
     }
     function gDrop(e, el) {
         e.preventDefault();
@@ -1292,23 +1259,23 @@ function render_scan_page(array $user, array $group, int $gid): void
         clearTimeout(t._tid); t._tid = setTimeout(() => t.classList.remove('show'), 1500);
     }
 
-    function toggleGroup(gi) {
-        const caret = document.getElementById('gtg' + gi);
+    // プロダクト展開 → プロジェクト行を表示（閉じる時はファイルも畳む）
+    function toggleProduct(gi) {
+        const caret = document.getElementById('pc' + gi);
         const open = caret.textContent === '▶';
-        document.querySelectorAll('.g' + gi + '-row').forEach(r => r.style.display = open ? 'table-row' : 'none');
+        document.querySelectorAll('.p' + gi + '-proj').forEach(r => r.style.display = open ? 'table-row' : 'none');
         caret.textContent = open ? '▼' : '▶';
         if (!open) {
-            // 閉じる時は中の使用箇所も畳む
-            document.querySelectorAll('.g' + gi + '-use').forEach(u => u.style.display = 'none');
-            document.querySelectorAll('.g' + gi + '-row [id^="tg"]').forEach(b => b.textContent = '▶');
+            document.querySelectorAll('.prod' + gi + '[class*="-file"]').forEach(r => r.style.display = 'none');
+            document.querySelectorAll('[id^="jc' + gi + '_"]').forEach(c => c.textContent = '▶');
         }
     }
-    function toggleUsage(id) {
-        const row = document.getElementById('us' + id);
-        const tg  = document.getElementById('tg' + id);
-        const open = row.style.display === 'none';
-        row.style.display = open ? 'table-row' : 'none';
-        if (tg) tg.textContent = open ? '▼' : '▶';
+    // プロジェクト展開 → そのキーファイル行を表示
+    function toggleProj(gi, pj) {
+        const caret = document.getElementById('jc' + gi + '_' + pj);
+        const open = caret.textContent === '▶';
+        document.querySelectorAll('.p' + gi + 'j' + pj + '-file').forEach(r => r.style.display = open ? 'table-row' : 'none');
+        caret.textContent = open ? '▼' : '▶';
     }
 </script>
 </body>
