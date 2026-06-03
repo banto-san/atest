@@ -469,13 +469,14 @@ function assign_usages_to_project(int $gid, array $usageIds, ?int $projectId): i
     return $stmt->rowCount();
 }
 
-/** サイト(repoラベル)配下の全URLを箱へ移動 */
+/** サイト（ファイルパス先頭ディレクトリ）配下の全URLを箱へ移動 */
 function assign_site_to_project(int $gid, string $site, ?int $projectId): int
 {
     $stmt = db()->prepare(
-        'UPDATE usages SET project_id = :pid WHERE api_id IN (SELECT id FROM apis WHERE group_id = :g AND site = :s)'
+        'UPDATE usages SET project_id = :pid
+         WHERE (file = :s OR file LIKE :sp) AND api_id IN (SELECT id FROM apis WHERE group_id = :g)'
     );
-    $stmt->execute([':pid' => $projectId, ':g' => $gid, ':s' => $site]);
+    $stmt->execute([':pid' => $projectId, ':s' => $site, ':sp' => $site . '/%', ':g' => $gid]);
     return $stmt->rowCount();
 }
 
