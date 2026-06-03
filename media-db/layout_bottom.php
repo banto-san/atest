@@ -23,7 +23,7 @@
         window.__CSRF__ = <?= json_encode(csrf_token(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     </script>
     <!-- 共通フロント処理（データストア / 保存 / CSV / ランキング集計） -->
-    <script src="assets/app-core.js"></script>
+    <script src="app-core.js"></script>
     <?php if (!empty($pageScript)): ?>
     <!-- このページ専用の Vue アプリ -->
     <script src="<?= h($pageScript) ?>"></script>

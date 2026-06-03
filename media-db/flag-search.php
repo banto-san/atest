@@ -6,9 +6,9 @@ require_login();
 $data       = load_data();
 $pageTitle  = 'フラグ(媒体)別 逆引き検索';
 $currentNav = 'flag-search';
-$pageScript = 'assets/page-flag-search.js';
+$pageScript = 'page-flag-search.js';
 
-require __DIR__ . '/partials/layout_top.php';
+require __DIR__ . '/layout_top.php';
 ?>
 <div class="max-w-6xl mx-auto space-y-6">
     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
@@ -88,4 +88,4 @@ require __DIR__ . '/partials/layout_top.php';
         </div>
     </div>
 </div>
-<?php require __DIR__ . '/partials/layout_bottom.php'; ?>
+<?php require __DIR__ . '/layout_bottom.php'; ?>

@@ -6,9 +6,9 @@ require_login();
 $data       = load_data();
 $pageTitle  = '受注一覧・ランキング';
 $currentNav = 'dashboard';
-$pageScript = 'assets/page-dashboard.js';
+$pageScript = 'page-dashboard.js';
 
-require __DIR__ . '/partials/layout_top.php';
+require __DIR__ . '/layout_top.php';
 ?>
 <div class="max-w-6xl mx-auto space-y-6">
 
@@ -106,4 +106,4 @@ require __DIR__ . '/partials/layout_top.php';
         </div>
     </div>
 </div>
-<?php require __DIR__ . '/partials/layout_bottom.php'; ?>
+<?php require __DIR__ . '/layout_bottom.php'; ?>

@@ -6,9 +6,9 @@ require_login();
 $data       = load_data();
 $pageTitle  = 'データ登録・インポート';
 $currentNav = 'register';
-$pageScript = 'assets/page-register.js';
+$pageScript = 'page-register.js';
 
-require __DIR__ . '/partials/layout_top.php';
+require __DIR__ . '/layout_top.php';
 ?>
 <div class="max-w-5xl mx-auto space-y-6">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -88,4 +88,4 @@ require __DIR__ . '/partials/layout_top.php';
         </div>
     </div>
 </div>
-<?php require __DIR__ . '/partials/layout_bottom.php'; ?>
+<?php require __DIR__ . '/layout_bottom.php'; ?>
