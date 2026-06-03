@@ -305,6 +305,7 @@ function db(): PDO
             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id           INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
             name               TEXT    NOT NULL,
+            product            TEXT    NOT NULL DEFAULT '',
             openai_project_id  TEXT    NOT NULL DEFAULT '',
             secret_enc         TEXT,
             secret_hint        TEXT,
@@ -350,14 +351,20 @@ function db(): PDO
         $pdo->exec('ALTER TABLE usages ADD COLUMN project_id INTEGER');
     }
 
+    // projects.product を後付け
+    $projCols = array_column($pdo->query('PRAGMA table_info(projects)')->fetchAll(), 'name');
+    if (!in_array('product', $projCols, true)) {
+        $pdo->exec("ALTER TABLE projects ADD COLUMN product TEXT NOT NULL DEFAULT ''");
+    }
+
     // 既存 cost_project → projects 箱へ自動移行（projects が空のときだけ）
     if ((int) $pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn() === 0) {
         $now = now();
-        $rows = $pdo->query("SELECT DISTINCT group_id, cost_project FROM apis WHERE IFNULL(cost_project,'') <> ''")->fetchAll();
-        $ins = $pdo->prepare('INSERT INTO projects (group_id, name, openai_project_id, created_at, updated_at) VALUES (:g,:n,:p,:c,:c)');
+        $rows = $pdo->query("SELECT group_id, cost_project, MIN(name) AS pname FROM apis WHERE IFNULL(cost_project,'') <> '' GROUP BY group_id, cost_project")->fetchAll();
+        $ins = $pdo->prepare('INSERT INTO projects (group_id, name, product, openai_project_id, created_at, updated_at) VALUES (:g,:n,:prod,:p,:c,:c)');
         $asg = $pdo->prepare('UPDATE usages SET project_id = :pid WHERE api_id IN (SELECT id FROM apis WHERE group_id = :g AND cost_project = :cp)');
         foreach ($rows as $r) {
-            $ins->execute([':g' => $r['group_id'], ':n' => $r['cost_project'], ':p' => $r['cost_project'], ':c' => $now]);
+            $ins->execute([':g' => $r['group_id'], ':n' => $r['cost_project'], ':prod' => $r['pname'], ':p' => $r['cost_project'], ':c' => $now]);
             $pid = (int) $pdo->lastInsertId();
             $asg->execute([':pid' => $pid, ':g' => $r['group_id'], ':cp' => $r['cost_project']]);
         }
@@ -443,10 +450,10 @@ function get_project(int $gid, int $id): ?array
     return $st->fetch() ?: null;
 }
 
-function create_project(int $gid, string $name, string $projId): int
+function create_project(int $gid, string $name, string $projId, string $product = ''): int
 {
-    db()->prepare('INSERT INTO projects (group_id, name, openai_project_id, created_at, updated_at) VALUES (:g,:n,:p,:c,:c)')
-        ->execute([':g' => $gid, ':n' => $name, ':p' => $projId, ':c' => now()]);
+    db()->prepare('INSERT INTO projects (group_id, name, product, openai_project_id, created_at, updated_at) VALUES (:g,:n,:prod,:p,:c,:c)')
+        ->execute([':g' => $gid, ':n' => $name, ':prod' => $product, ':p' => $projId, ':c' => now()]);
     return (int) db()->lastInsertId();
 }
 
