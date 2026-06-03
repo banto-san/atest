@@ -428,7 +428,8 @@ function cost_openai(string $key, ?string $projectId = null): array
     $start = strtotime(gmdate('Y-m-01 00:00:00') . ' UTC');
     $url = 'https://api.openai.com/v1/organization/costs?start_time=' . $start . '&bucket_width=1d&limit=62';
     if ($projectId !== null && $projectId !== '') {
-        $url .= '&project_ids=' . rawurlencode($projectId);
+        // プロジェクト絞り込みは group_by=project_id を付け、結果側で該当IDのみ合計する
+        $url .= '&project_ids=' . rawurlencode($projectId) . '&group_by=project_id';
     }
     $r = http_request('GET', $url, ['headers' => ['Authorization: Bearer ' . $key]]);
 
@@ -441,13 +442,23 @@ function cost_openai(string $key, ?string $projectId = null): array
     $d = json_decode($r['body'], true);
     $sum = 0.0;
     $cur = 'USD';
+    $matched = 0;   // プロジェクト指定時、該当結果が見つかった数
     foreach (($d['data'] ?? []) as $bucket) {
         foreach (($bucket['results'] ?? []) as $res) {
+            if ($projectId !== null && $projectId !== '') {
+                if (($res['project_id'] ?? null) !== $projectId) {
+                    continue;   // 指定プロジェクト以外は除外
+                }
+                $matched++;
+            }
             $sum += (float) ($res['amount']['value'] ?? 0);
             if (!empty($res['amount']['currency'])) {
                 $cur = strtoupper((string) $res['amount']['currency']);
             }
         }
+    }
+    if ($projectId !== null && $projectId !== '' && $matched === 0) {
+        throw new RuntimeException('プロジェクト「' . $projectId . '」のコストが取得できませんでした。プロジェクトIDが正しいか、当月に課金があるかご確認ください。');
     }
     return ['amount' => round($sum, 2), 'currency' => $cur];
 }
