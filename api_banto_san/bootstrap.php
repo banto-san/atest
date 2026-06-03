@@ -10,6 +10,18 @@ declare(strict_types=1);
 
 mb_internal_encoding('UTF-8');
 
+// 致命的エラーを白画面の代わりに表示（診断用）。
+register_shutdown_function(static function () {
+    $e = error_get_last();
+    if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_RECOVERABLE_ERROR], true)) {
+        if (!headers_sent()) { http_response_code(500); }
+        echo "\n<pre style=\"background:#fff;color:#b42318;padding:12px;margin:12px;border:2px solid #b42318;white-space:pre-wrap;font-size:13px;z-index:99999;position:relative\">";
+        echo "API番人さん エラー:\n" . htmlspecialchars((string) $e['message'], ENT_QUOTES) . "\n"
+           . htmlspecialchars((string) $e['file'], ENT_QUOTES) . ' : ' . (int) $e['line'];
+        echo "</pre>";
+    }
+});
+
 const APP_NAME = 'API番人さん';
 const DB_FILE  = __DIR__ . '/data.sqlite';
 
