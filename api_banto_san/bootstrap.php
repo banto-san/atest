@@ -351,24 +351,17 @@ function render_styles(): void { ?>
     .hero-amount .cur { font-size:18px; font-weight:700; opacity:.85; margin-right:4px; }
     .hero-amount.muted { color:#cfd6e6; }
     .jpyhint { font-size:.5em; font-weight:400; opacity:.7; margin-left:2px; white-space:nowrap; }
-    /* 暖簾タブ（アカウントのカテゴリ切替）＝紺布＋金の突っ張り棒＋裾の切れ込み */
-    .noren-tabs { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:22px; }
-    .noren-tab { position:relative; border:none; cursor:pointer; background:var(--accent); color:#fff; font-weight:700; font-size:13px;
-        padding:12px 16px 12px; border-top:5px solid var(--gold); border-radius:3px 3px 0 0;
-        box-shadow:0 4px 10px rgba(47,122,214,.20); opacity:.8; transition:opacity .12s, transform .12s; margin-bottom:9px; }
-    .noren-tab::after { content:""; position:absolute; left:0; right:0; bottom:-9px; height:9px; background:inherit;
-        -webkit-mask:repeating-linear-gradient(90deg,#000 0 16px, transparent 16px 23px);
-                mask:repeating-linear-gradient(90deg,#000 0 16px, transparent 16px 23px); }
-    .noren-tab:hover { opacity:1; }
-    .noren-tab.active { opacity:1; background:var(--accent-d); }
-    .noren-tab .nt-n { display:inline-block; margin-left:6px; background:rgba(255,255,255,.25); border-radius:999px; padding:0 7px; font-size:11px; }
-    /* 暖簾の見出しリボン＝紺布、上に金の棒、裾は切れ込み（のれんスリット） */
-    .noren-head { position:relative; display:flex; align-items:center; gap:10px; margin:-18px -20px 22px; padding:12px 18px 14px; color:#fff;
-        background:var(--accent); border-top:5px solid var(--gold); border-radius:var(--radius) var(--radius) 0 0; }
-    .noren-head::after { content:""; position:absolute; left:0; right:0; bottom:-11px; height:11px; background:var(--accent);
-        -webkit-mask:repeating-linear-gradient(90deg,#000 0 30px, transparent 30px 40px);
-                mask:repeating-linear-gradient(90deg,#000 0 30px, transparent 30px 40px); }
-    .noren-head .noren-cloth { font-weight:800; font-size:15px; letter-spacing:.04em; }
+    /* カテゴリ切替タブ（シンプルなピル型） */
+    .noren-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+    .noren-tab { border:1px solid var(--line); cursor:pointer; background:var(--card); color:var(--muted); font-weight:700; font-size:13px;
+        padding:8px 14px; border-radius:999px; transition:background .12s, color .12s, border-color .12s; }
+    .noren-tab:hover { border-color:var(--accent); color:var(--accent); }
+    .noren-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .noren-tab .nt-n { display:inline-block; margin-left:6px; background:rgba(0,0,0,.08); border-radius:999px; padding:0 7px; font-size:11px; }
+    .noren-tab.active .nt-n { background:rgba(255,255,255,.25); }
+    /* カテゴリ見出し（シンプルな下線見出し） */
+    .noren-head { display:flex; align-items:center; gap:10px; margin:0 0 16px; padding:0 0 10px; border-bottom:2px solid var(--line); }
+    .noren-head .noren-cloth { font-weight:800; font-size:15px; color:var(--ink); }
     /* 湯気の仕切り線 */
     .steam-hr { height:14px; margin:4px 0 18px; background-repeat:repeat-x; background-position:center;
         background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='14' viewBox='0 0 60 14'><path d='M0 9 Q15 0 30 9 T60 9' fill='none' stroke='%232f7ad6' stroke-width='2' opacity='0.45'/></svg>"); }
@@ -596,7 +589,7 @@ function render_sidebar(string $active = ''): void
         </div>
     </div>
     <a class="nav" href="<?= h(app_url('logout')) ?>"><?= icon('logout') ?> ログアウト</a>
-    <div class="banto-footer"><img src="<?= h(app_base_url()) ?>/duck2.png" alt="" class="banto-mini"> ♨ 本日も営業中</div>
+    <div class="banto-footer"><img src="<?= h(app_base_url()) ?>/duck2.png" alt="" class="banto-mini"> ♨ 入浴中</div>
 </aside>
 <?php
 }
