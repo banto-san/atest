@@ -84,11 +84,11 @@ function mdb_default_data(): array
             ['id' => 'm8', 'name' => 'doda',         'domain' => 'doda.jp'],
         ],
         'clients' => [
-            ['id' => 'c1', 'name' => '株式会社アルファ',     'industry' => 'IT・通信', 'ourService' => 'SEO対策', 'orderDate' => '2026-06-02', 'address' => '東京都渋谷区神南1-2-3',        'sourceMediaId' => 'm1', 'usedMediaIds' => ['m1', 'm2', 'm6']],
-            ['id' => 'c2', 'name' => 'ベータ建設工業',       'industry' => '建設',     'ourService' => 'HP制作',  'orderDate' => '2026-06-02', 'address' => '大阪府大阪市北区梅田2-4-6',     'sourceMediaId' => 'm3', 'usedMediaIds' => ['m3', 'm5']],
-            ['id' => 'c3', 'name' => 'ガンマ商事',           'industry' => '卸売',     'ourService' => 'SNS運用', 'orderDate' => '2026-06-01', 'address' => '愛知県名古屋市中区栄3-5-7',     'sourceMediaId' => 'm1', 'usedMediaIds' => ['m1', 'm4', 'm5', 'm7']],
-            ['id' => 'c4', 'name' => 'デルタ不動産',         'industry' => '不動産',   'ourService' => 'HP制作',  'orderDate' => '2026-05-28', 'address' => '福岡県福岡市博多区博多駅前1-1-1', 'sourceMediaId' => 'm6', 'usedMediaIds' => ['m1', 'm6', 'm8']],
-            ['id' => 'c5', 'name' => 'イプシロン医療法人',   'industry' => '医療',     'ourService' => 'SEO対策', 'orderDate' => '2026-06-02', 'address' => '北海道札幌市中央区大通西4-1',   'sourceMediaId' => 'm2', 'usedMediaIds' => ['m2', 'm8']],
+            ['id' => 'c1', 'name' => '株式会社アルファ',     'industry' => 'IT・通信', 'orderDate' => '2026-06-02', 'address' => '東京都渋谷区神南1-2-3',        'sourceMediaId' => 'm1', 'usedMediaIds' => ['m1', 'm2', 'm6']],
+            ['id' => 'c2', 'name' => 'ベータ建設工業',       'industry' => '建設',     'orderDate' => '2026-06-02', 'address' => '大阪府大阪市北区梅田2-4-6',     'sourceMediaId' => 'm3', 'usedMediaIds' => ['m3', 'm5']],
+            ['id' => 'c3', 'name' => 'ガンマ商事',           'industry' => '卸売',     'orderDate' => '2026-06-01', 'address' => '愛知県名古屋市中区栄3-5-7',     'sourceMediaId' => 'm1', 'usedMediaIds' => ['m1', 'm4', 'm5', 'm7']],
+            ['id' => 'c4', 'name' => 'デルタ不動産',         'industry' => '不動産',   'orderDate' => '2026-05-28', 'address' => '福岡県福岡市博多区博多駅前1-1-1', 'sourceMediaId' => 'm6', 'usedMediaIds' => ['m1', 'm6', 'm8']],
+            ['id' => 'c5', 'name' => 'イプシロン医療法人',   'industry' => '医療',     'orderDate' => '2026-06-02', 'address' => '北海道札幌市中央区大通西4-1',   'sourceMediaId' => 'm2', 'usedMediaIds' => ['m2', 'm8']],
         ],
     ];
 }

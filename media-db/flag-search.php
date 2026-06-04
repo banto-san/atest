@@ -79,7 +79,7 @@ require __DIR__ . '/layout_top.php';
                             </div>
                             <div class="flex gap-2 mb-3">
                                 <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{{ client.industry }}</span>
-                                <span class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">{{ client.ourService }}</span>
+                                <span v-if="client.address" class="text-xs bg-gray-50 text-gray-500 px-2 py-0.5 rounded border">{{ client.address }}</span>
                             </div>
                         </li>
                     </ul>

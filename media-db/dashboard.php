@@ -52,9 +52,9 @@ require __DIR__ . '/layout_top.php';
                         </button>
                         <div class="flex justify-between items-start mb-2 pr-8">
                             <h4 class="font-bold text-gray-900">{{ client.name }}</h4>
-                            <span class="text-xs text-gray-500 bg-white px-2 py-1 rounded border">{{ client.ourService }}</span>
+                            <span class="text-xs text-gray-500">{{ client.industry }}</span>
                         </div>
-                        <div class="text-sm text-gray-600 mb-1">受注日: <span class="font-bold text-gray-800">{{ client.orderDate }}</span> / 業界: {{ client.industry }}</div>
+                        <div class="text-sm text-gray-600 mb-1">受注日: <span class="font-bold text-gray-800">{{ client.orderDate }}</span></div>
                         <div v-if="client.address" class="text-sm text-gray-600 mb-1">住所: <span class="text-gray-800">{{ client.address }}</span></div>
                         <div class="text-sm text-gray-600 mb-2 flex items-center gap-1">
                             <span>受注リスト元:</span>

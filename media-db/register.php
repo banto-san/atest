@@ -10,6 +10,9 @@ $pageScript = 'page-register.js';
 
 require __DIR__ . '/layout_top.php';
 ?>
+<!-- Excel(.xlsx)読み込み用ライブラリ（CSVはこれが無くても動きます） -->
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <div class="max-w-5xl mx-auto space-y-6">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -30,10 +33,6 @@ require __DIR__ . '/layout_top.php';
                         <input type="text" v-model="newClient.industry" placeholder="IT・通信" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">自社受注サービス</label>
-                        <input type="text" v-model="newClient.ourService" placeholder="SEO対策" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div class="col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1">受注日</label>
                         <input type="date" v-model="newClient.orderDate" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
                     </div>
@@ -79,25 +78,95 @@ require __DIR__ . '/layout_top.php';
             </form>
         </div>
 
-        <!-- 一括インポート -->
+        <!-- 一括インポート（ファイル選択） -->
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <h3 class="text-lg font-bold mb-4 flex items-center border-b pb-2">
                 <i data-lucide="table" class="w-5 h-5 mr-2 text-green-600"></i>
-                Excel/CSVから一括インポート
+                Excel/CSVファイルから一括インポート
             </h3>
-            <p class="text-sm text-gray-600 mb-4">
-                Excelの表をコピーして下の枠に貼り付けるか、CSVのテキストを貼り付けてください。
-                <br><span class="font-bold text-red-500 text-xs">フォーマット: 顧客名, 業界, 自社サービス, 受注日(YYYY-MM-DD), 住所, リスト元媒体, 利用媒体(カンマ区切り)</span>
-                <br><span class="text-xs text-gray-500">※住所・リスト元媒体は空でもOK。利用媒体は必ず一番最後の列に置いてください。</span>
+            <p class="text-sm text-gray-600 mb-3">
+                Excel(.xlsx) または CSV ファイルを選んで取り込みます。
+                <br><span class="font-bold text-red-500 text-xs">列の順番: 顧客名, 業界, 受注日(YYYY-MM-DD), 住所, リスト元媒体, 利用媒体(カンマ区切り)</span>
+                <br><span class="text-xs text-gray-500">※1行目が見出し（「顧客名」等）の場合は自動で飛ばします。利用媒体は一番最後の列に。</span>
             </p>
 
-            <textarea v-model="importText" rows="10" placeholder="株式会社A&#9;IT&#9;SEO&#9;2026-06-02&#9;東京都渋谷区神南&#9;イツザイ&#9;イツザイ,Sansan&#10;株式会社B&#9;建設&#9;HP制作&#9;2026-06-01&#9;大阪府大阪市北区梅田&#9;リクナビ&#9;リクナビ"
-                      class="w-full border border-gray-300 rounded-md p-3 text-sm font-mono focus:ring-blue-500 focus:border-blue-500 mb-4 bg-gray-50 whitespace-pre"></textarea>
+            <!-- ファイル選択エリア -->
+            <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition mb-3">
+                <i data-lucide="upload-cloud" class="w-8 h-8 text-gray-400 mb-2"></i>
+                <span class="text-sm text-gray-600 font-medium">クリックして Excel / CSV ファイルを選択</span>
+                <span class="text-xs text-gray-400 mt-1">.xlsx / .csv / .txt に対応</span>
+                <input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" @change="onFileChange" class="hidden">
+            </label>
 
-            <button @click="processImport" :disabled="store.isSyncing" class="w-full bg-green-600 text-white font-medium py-2 px-4 rounded-md hover:bg-green-700 transition shadow-sm flex justify-center items-center disabled:opacity-50">
-                <i data-lucide="file-input" class="w-4 h-4 mr-2"></i> データを読み込む
+            <div v-if="importFileName" class="text-sm text-gray-700 mb-3 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded p-2">
+                <i data-lucide="file" class="w-4 h-4 text-gray-400 shrink-0"></i>
+                <span class="truncate">{{ importFileName }}</span>
+                <span v-if="importRows.length" class="text-xs text-gray-500 shrink-0">（{{ importRows.length }} 行）</span>
+            </div>
+
+            <button @click="processImport" :disabled="store.isSyncing || importRows.length === 0" class="w-full bg-green-600 text-white font-medium py-2 px-4 rounded-md hover:bg-green-700 transition shadow-sm flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                <i data-lucide="file-input" class="w-4 h-4 mr-2"></i> このファイルを取り込む
             </button>
             <p v-if="importMessage" :class="importError ? 'text-red-600' : 'text-green-600'" class="text-sm mt-3 font-medium bg-gray-50 p-2 rounded border">{{ importMessage }}</p>
+        </div>
+    </div>
+
+    <!-- 登録済み顧客一覧（削除・一括削除） -->
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4 border-b pb-3">
+            <h3 class="text-lg font-bold flex items-center text-gray-800">
+                <i data-lucide="list" class="w-5 h-5 mr-2 text-blue-600"></i>
+                登録済み顧客一覧
+                <span class="ml-2 text-sm font-bold bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full">{{ store.clients.length }} 社</span>
+            </h3>
+            <div class="flex items-center gap-2">
+                <button @click="deleteSelected" :disabled="selectedClientIds.length === 0"
+                        class="inline-flex items-center gap-1 text-sm font-medium text-red-600 border border-red-200 rounded-md px-3 py-1.5 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i> 選択した{{ selectedClientIds.length }}件を削除
+                </button>
+                <button @click="deleteAllClients" :disabled="store.clients.length === 0"
+                        class="inline-flex items-center gap-1 text-sm font-medium text-white bg-red-600 rounded-md px-3 py-1.5 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i data-lucide="trash" class="w-4 h-4"></i> 全件削除
+                </button>
+            </div>
+        </div>
+
+        <div v-if="store.clients.length === 0" class="text-center p-8 text-gray-400">
+            まだ顧客が登録されていません。
+        </div>
+        <div v-else class="border border-gray-200 rounded-lg overflow-x-auto max-h-[480px] overflow-y-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="text-xs text-gray-700 bg-gray-100 border-b border-gray-200 sticky top-0">
+                    <tr>
+                        <th class="px-3 py-3 w-10 text-center">
+                            <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" class="w-4 h-4 rounded border-gray-300" title="全選択">
+                        </th>
+                        <th class="px-3 py-3 font-bold">顧客名</th>
+                        <th class="px-3 py-3 font-bold">業界</th>
+                        <th class="px-3 py-3 font-bold">住所</th>
+                        <th class="px-3 py-3 font-bold">受注日</th>
+                        <th class="px-3 py-3 font-bold">リスト元</th>
+                        <th class="px-3 py-3 font-bold text-center w-16">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="client in store.clients" :key="client.id" class="bg-white border-b hover:bg-blue-50 transition-colors">
+                        <td class="px-3 py-2 text-center">
+                            <input type="checkbox" :value="client.id" v-model="selectedClientIds" class="w-4 h-4 rounded border-gray-300">
+                        </td>
+                        <td class="px-3 py-2 font-medium text-gray-900">{{ client.name }}</td>
+                        <td class="px-3 py-2 text-gray-600">{{ client.industry }}</td>
+                        <td class="px-3 py-2 text-gray-600">{{ client.address }}</td>
+                        <td class="px-3 py-2 text-gray-600">{{ client.orderDate }}</td>
+                        <td class="px-3 py-2 text-gray-600">{{ sourceMediaName(client) || '—' }}</td>
+                        <td class="px-3 py-2 text-center">
+                            <button @click="deleteOneClient(client.id)" class="text-red-600 hover:bg-red-50 p-1.5 rounded" title="この顧客を削除">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
