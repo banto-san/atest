@@ -346,6 +346,19 @@ function render_styles(): void { ?>
     .hero-amount .cur { font-size:18px; font-weight:700; opacity:.85; margin-right:4px; }
     .hero-amount.muted { color:#cfd6e6; }
     .jpyhint { font-size:.5em; font-weight:400; opacity:.7; margin-left:2px; white-space:nowrap; }
+    /* 暖簾タブ（アカウントのカテゴリ切替） */
+    .noren-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+    .noren-tab { position:relative; border:none; cursor:pointer; background:var(--accent); color:#fff; font-weight:700; font-size:13px;
+        padding:11px 16px 12px; border-radius:0 0 10px 10px; box-shadow:0 5px 12px rgba(47,122,214,.22);
+        border-top:5px solid; border-image:repeating-linear-gradient(90deg,var(--gold) 0 13px,#fff 13px 26px) 1; opacity:.78; transition:opacity .12s, transform .12s; }
+    .noren-tab:hover { opacity:1; }
+    .noren-tab.active { opacity:1; transform:translateY(3px); background:var(--accent-d); }
+    .noren-tab .nt-n { display:inline-block; margin-left:6px; background:rgba(255,255,255,.25); border-radius:999px; padding:0 7px; font-size:11px; }
+    /* 暖簾の見出しリボン */
+    .noren-head { display:flex; align-items:center; gap:10px; margin:-18px -20px 12px; padding:12px 18px 14px; color:#fff;
+        background:linear-gradient(135deg,var(--accent),#5aa6ec); border-radius:var(--radius) var(--radius) 0 0;
+        border-bottom:5px solid; border-image:repeating-linear-gradient(90deg,var(--gold) 0 14px,#fff 14px 28px) 1; }
+    .noren-head .noren-cloth { font-weight:800; font-size:15px; }
     .hero-stats { display:flex; gap:22px; margin-top:auto; padding-top:16px; }
     .hero-stats > div { display:flex; flex-direction:column; }
     .hero-stats .n { font-size:22px; font-weight:800; }

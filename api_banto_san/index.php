@@ -1474,15 +1474,23 @@ if ($route === 'accounts'):
 
     <?php if (!$accounts): ?>
         <div class="empty">まだ登録がありません。「アカウントを追加」から登録してください。</div>
-    <?php else: foreach ($byCat as $cat => $rows): ?>
-        <div class="panel" style="margin-bottom:16px">
-            <h3 style="display:flex;align-items:center;gap:8px"><?= icon('lock', 15) ?> <?= h($cat) ?> <span class="muted" style="font-weight:400;font-size:13px">（<?= count($rows) ?>）</span></h3>
+    <?php else: ?>
+        <!-- 暖簾タブ：カテゴリー切り替え -->
+        <div class="noren-tabs">
+            <button type="button" class="noren-tab active" data-cat="__all" onclick="acctTab('__all', this)">すべて<span class="nt-n"><?= count($accounts) ?></span></button>
+            <?php foreach ($byCat as $cat => $rows): ?>
+                <button type="button" class="noren-tab" data-cat="<?= h($cat) ?>" onclick="acctTab(<?= htmlspecialchars(json_encode($cat, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>, this)"><?= h($cat) ?><span class="nt-n"><?= count($rows) ?></span></button>
+            <?php endforeach; ?>
+        </div>
+    <?php foreach ($byCat as $cat => $rows): ?>
+        <div class="panel acct-cat" data-cat="<?= h($cat) ?>" style="margin-bottom:16px">
+            <div class="noren-head"><span class="noren-cloth"><?= h($cat) ?></span><span class="muted" style="font-weight:400;font-size:13px">（<?= count($rows) ?>）</span></div>
             <table>
                 <thead><tr><th>サービス</th><th>ログインID</th><th>パスワード</th><th class="hide-sm">メモ</th><th>操作</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $a): ?>
                     <tr>
-                        <td><strong><?= h($a['service']) ?></strong><?php if ($a['url'] !== ''): ?><br><a href="<?= h($a['url']) ?>" target="_blank" rel="noopener" class="product-link" style="font-size:12px"><?= icon('right', 12) ?> ログイン</a><?php endif; ?></td>
+                        <td><span style="display:inline-flex;align-items:center;gap:8px"><?= provider_badge($a['service'], 26) ?> <span><strong><?= h($a['service']) ?></strong><?php if ($a['url'] !== ''): ?><br><a href="<?= h($a['url']) ?>" target="_blank" rel="noopener" class="product-link" style="font-size:12px"><?= icon('right', 12) ?> ログイン</a><?php endif; ?></span></span></td>
                         <td><?php if ($a['login_id'] !== ''): ?><code><?= h($a['login_id']) ?></code> <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($a['login_id'], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 14) ?></button><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                         <td style="white-space:nowrap">
                             <?php if ($a['secret_hint']): ?>
@@ -1533,6 +1541,13 @@ if ($route === 'accounts'):
     const accountDialog = document.getElementById('accountDialog');
     const ACC_CSRF = '<?= h($csrf) ?>';
     const pwShown = {};
+    function acctTab(cat, btn) {
+        document.querySelectorAll('.noren-tab').forEach(t => t.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        document.querySelectorAll('.acct-cat').forEach(p => {
+            p.style.display = (cat === '__all' || p.getAttribute('data-cat') === cat) ? '' : 'none';
+        });
+    }
     function openAccount(a) {
         a = a || {};
         document.getElementById('accountModalTitle').textContent = a.id ? 'アカウントを編集' : 'アカウントを追加';
