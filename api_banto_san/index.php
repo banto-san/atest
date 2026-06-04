@@ -749,16 +749,15 @@ foreach ($names as $nm) {
         }
     }
 }
-// 全体ドーナツ：合計が最大の通貨でプロダクト内訳を描く
-$donutCur = '';
-$donutMax = -1.0;
-foreach ($subtotals as $cur => $sum) { if ($sum > $donutMax) { $donutMax = $sum; $donutCur = $cur; } }
-$donutSegs = [];
-if ($donutCur !== '' && !empty($prodCostByCur[$donutCur])) {
-    $pc = $prodCostByCur[$donutCur];
-    arsort($pc);
-    foreach ($pc as $nm => $v) { if ($v > 0) { $donutSegs[] = ['label' => $nm, 'value' => (float) $v]; } }
+// 全体ドーナツ：全通貨を JPY 換算してプロダクト内訳を描く（USDもJPYも一緒に）
+$donutCur = 'JPY換算';
+$prodJpy = [];
+foreach ($prodCostByCur as $cur => $byProd) {
+    foreach ($byProd as $nm => $v) { $prodJpy[$nm] = ($prodJpy[$nm] ?? 0) + to_jpy((float) $v, $cur); }
 }
+arsort($prodJpy);
+$donutSegs = [];
+foreach ($prodJpy as $nm => $v) { if ($v > 0) { $donutSegs[] = ['label' => $nm, 'value' => (float) $v]; } }
 
 $providers = $pdo->prepare("SELECT DISTINCT provider FROM apis WHERE group_id = :gid AND provider <> '' ORDER BY provider");
 $providers->execute([':gid' => $gid]);
@@ -778,7 +777,7 @@ function fmt_money(?float $cost, string $cur): string
         return '<span class="muted">未設定</span>';
     }
     $n = (fmod($cost, 1.0) === 0.0) ? number_format($cost) : number_format($cost, 2);
-    return h($cur) . ' ' . $n;
+    return h($cur) . ' ' . $n . jpy_hint($cost, $cur);
 }
 
 /** 通貨別合計を文字列に（例: "JPY 12,000　USD 30"） */
@@ -1582,10 +1581,10 @@ if ($route === 'product'):
         foreach ($u as $uu) { $sites[usage_site($uu)] = 1; }
         $boxList[] = ['box' => $b, 'urls' => dedup_urls($u), 'sites' => array_keys($sites)];
     }
-    // ドーナツ：箱別コスト（金額あり・降順）
+    // ドーナツ：箱別コスト（JPY換算・降順。USD/JPY混在でも一緒に表示）
     $bsegs = [];
     foreach ($pboxes as $b) {
-        if ($b['monthly_cost'] !== null && (float) $b['monthly_cost'] > 0) { $bsegs[] = ['label' => $b['name'], 'value' => (float) $b['monthly_cost']]; }
+        if ($b['monthly_cost'] !== null && (float) $b['monthly_cost'] > 0) { $bsegs[] = ['label' => $b['name'], 'value' => to_jpy((float) $b['monthly_cost'], $b['currency'] ?: 'USD')]; }
     }
     usort($bsegs, static fn($a, $b) => $b['value'] <=> $a['value']);
     $bTot = array_sum(array_map(static fn($s) => $s['value'], $bsegs));
@@ -1625,7 +1624,7 @@ if ($route === 'product'):
         <div class="hero-main">
             <div class="hero-label">月額コスト</div>
             <?php if ($pcost): foreach ($pcost as $cur => $sum): ?>
-                <div class="hero-amount"><span class="cur"><?= h($cur) ?></span> <?= number_format($sum, (fmod($sum,1.0)===0.0)?0:2) ?></div>
+                <div class="hero-amount"><span class="cur"><?= h($cur) ?></span> <?= number_format($sum, (fmod($sum,1.0)===0.0)?0:2) ?><?= jpy_hint((float) $sum, $cur) ?></div>
             <?php endforeach; else: ?>
                 <div class="hero-amount muted">未設定</div>
             <?php endif; ?>
@@ -1636,7 +1635,7 @@ if ($route === 'product'):
             </div>
         </div>
         <div class="hero-chart">
-            <div class="hero-label">プロジェクト箱別コスト</div>
+            <div class="hero-label">プロジェクト箱別コスト（JPY換算）</div>
             <div class="donut-wrap">
                 <?= svg_donut($bsegs, 168, 24) ?>
                 <div class="legend">
@@ -1674,7 +1673,7 @@ if ($route === 'product'):
     <div class="panel" style="margin-bottom:18px">
         <h3><?= icon('refresh', 16) ?> コスト推移（<?= h($dCur) ?>・月次）</h3>
         <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px">
-            <div><span class="muted" style="font-size:12px">今月</span> <strong style="font-size:20px"><?= h($dCur) ?> <?= number_format($curV, (fmod($curV,1.0)===0.0)?0:2) ?></strong></div>
+            <div><span class="muted" style="font-size:12px">今月</span> <strong style="font-size:20px"><?= h($dCur) ?> <?= number_format($curV, (fmod($curV,1.0)===0.0)?0:2) ?></strong><?= jpy_hint($curV, $dCur) ?></div>
             <?php if ($dpct !== null): $up = $dpct >= 0; ?>
                 <div class="<?= $up ? 'pcard-diff up' : 'pcard-diff down' ?>" style="font-size:14px"><?= $up ? '▲' : '▼' ?> <?= abs(round($dpct, 1)) ?>% <span class="muted">先月（<?= h($dCur) ?> <?= number_format($prevV) ?>）比</span></div>
             <?php else: ?><div class="muted" style="font-size:12px">前月データなし</div><?php endif; ?>
@@ -1704,7 +1703,7 @@ if ($route === 'product'):
     <div class="detail-grid">
         <!-- 箱別の月額 -->
         <div class="panel">
-            <h3>プロジェクト箱の月額</h3>
+            <h3>プロジェクト箱の月額（JPY換算）</h3>
             <?php if ($bsegs): $dc = donut_colors(); foreach ($bsegs as $i => $s): ?>
                 <div class="bar-row">
                     <span class="nm"><?= icon('box') ?> <?= h($s['label']) ?></span>
@@ -1939,7 +1938,7 @@ if ($route === 'product'):
             <div class="hero-label">月額コスト合計</div>
             <?php if ($subtotals): ?>
                 <?php foreach ($subtotals as $cur => $sum): ?>
-                    <div class="hero-amount"><span class="cur"><?= h($cur) ?></span> <?= number_format($sum, (fmod($sum,1.0)===0.0)?0:2) ?></div>
+                    <div class="hero-amount"><span class="cur"><?= h($cur) ?></span> <?= number_format($sum, (fmod($sum,1.0)===0.0)?0:2) ?><?= jpy_hint((float) $sum, $cur) ?></div>
                 <?php endforeach; ?>
             <?php else: ?>
                 <div class="hero-amount muted">—</div>
@@ -2060,7 +2059,7 @@ if ($route === 'product'):
                     <?php if ($cprov): ?><div class="pcard-prov muted"><?= h($cprov) ?></div><?php endif; ?>
                 </div>
             </div>
-            <div class="pcard-amt"><?php if ($cmoney): $first = true; foreach ($cmoney as $cur => $v): ?><?= $first ? '' : '<br>' ?><small><?= h($cur) ?></small> <?= number_format($v, (fmod($v,1.0)===0.0)?0:2) ?><?php $first = false; endforeach; else: ?><span class="muted" style="font-size:15px">未設定</span><?php endif; ?></div>
+            <div class="pcard-amt"><?php if ($cmoney): $first = true; foreach ($cmoney as $cur => $v): ?><?= $first ? '' : '<br>' ?><small><?= h($cur) ?></small> <?= number_format($v, (fmod($v,1.0)===0.0)?0:2) ?><?= jpy_hint((float) $v, $cur) ?><?php $first = false; endforeach; else: ?><span class="muted" style="font-size:15px">未設定</span><?php endif; ?></div>
             <?php if ($diffPct !== null): $up = $diffPct >= 0; ?>
                 <div class="pcard-diff <?= $up ? 'up' : 'down' ?>"><?= $up ? '▲' : '▼' ?> <?= abs(round($diffPct)) ?>% <span class="muted">先月比</span></div>
             <?php elseif ($alert !== null): ?>

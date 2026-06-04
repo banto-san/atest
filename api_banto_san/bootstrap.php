@@ -80,6 +80,29 @@ function config_bool(string $key): bool
     return in_array(strtolower((string) $v), ['1', 'true', 'yes', 'on'], true);
 }
 
+/** USD→JPY 換算レート（config の USD_JPY_RATE、既定 150） */
+function usd_jpy(): float
+{
+    $r = (float) config('USD_JPY_RATE', 150);
+    return $r > 0 ? $r : 150.0;
+}
+
+/** 金額を JPY 換算（JPY/USD のみ対応、その他はそのまま） */
+function to_jpy(float $amount, ?string $cur): float
+{
+    $cur = strtoupper((string) ($cur ?: 'JPY'));
+    if ($cur === 'USD') { return $amount * usd_jpy(); }
+    return $amount;
+}
+
+/** USD の金額の隣に出す「(約 ¥X)」ヒント（HTML）。JPY等は空文字。 */
+function jpy_hint(?float $amount, ?string $cur): string
+{
+    if ($amount === null) { return ''; }
+    if (strtoupper((string) ($cur ?: '')) !== 'USD') { return ''; }
+    return ' <span class="muted" style="font-weight:400;font-size:.82em">(約 ¥' . number_format($amount * usd_jpy()) . ')</span>';
+}
+
 /** 許可メールドメインの一覧（未設定なら空＝制限なし） */
 function allowed_email_domains(): array
 {
