@@ -437,9 +437,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $color = trim((string) ($_POST['logo_color'] ?? ''));
         $url = trim((string) ($_POST['logo_url'] ?? ''));
         if ($color !== '' && !preg_match('/^#[0-9a-fA-F]{6}$/', $color)) { $color = ''; }
+        try {
+            $up = save_uploaded_logo($gid, $prod);
+            if ($up !== null) { $url = $up; }
+        } catch (Throwable $e) { flash('err', $e->getMessage()); redirect_self(); }
         if ($url !== '' && !preg_match('#^https?://#i', $url)) { $url = ''; }
         if ($prod !== '') { set_product_logo($gid, $prod, $color, $url); }
         flash('ok', 'アイコンの見た目を保存しました。');
+        redirect_self();
+    }
+
+    if ($action === 'refresh_costs') {
+        require_role_at_least($gid, 'member');
+        $r = refresh_all_costs($gid);
+        if (($_POST['ajax'] ?? '') === '1') {
+            header('Content-Type: application/json');
+            echo json_encode($r);
+            exit;
+        }
+        flash('ok', sprintf('コストを一括更新しました（成功 %d / 失敗 %d / 対象外 %d）。', $r['ok'], $r['fail'], $r['skip']));
         redirect_self();
     }
 
@@ -1719,15 +1735,16 @@ if ($route === 'product'):
         </form>
         <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
         <h3 style="display:flex;align-items:center;gap:10px"><?= provider_badge($pname, 28, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?> アイコンの見た目</h3>
-        <form method="post" class="toolbar" style="margin:0;box-shadow:none;border:none;padding:0;background:none;align-items:flex-end">
+        <form method="post" enctype="multipart/form-data" class="toolbar" style="margin:0;box-shadow:none;border:none;padding:0;background:none;align-items:flex-end">
             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
             <input type="hidden" name="action" value="save_product_logo">
             <input type="hidden" name="product" value="<?= h($pname) ?>">
             <label style="font-size:12px;color:var(--muted)">背景色<br><input type="color" name="logo_color" value="<?= h($prodMeta[$pname]['logo_color'] ?? '#ffffff') ?>" style="width:56px;height:38px;padding:2px"></label>
-            <label style="font-size:12px;color:var(--muted);flex:1;min-width:180px">画像URL（任意・色より優先）<br><input type="url" name="logo_url" value="<?= h($prodMeta[$pname]['logo_url'] ?? '') ?>" placeholder="https://.../logo.png" style="width:100%"></label>
+            <label style="font-size:12px;color:var(--muted)">画像をアップロード<br><input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
+            <label style="font-size:12px;color:var(--muted);flex:1;min-width:160px">または画像URL<br><input type="url" name="logo_url" value="<?= h(preg_replace('/\?v=\d+$/', '', (string) ($prodMeta[$pname]['logo_url'] ?? ''))) ?>" placeholder="https://.../logo.png" style="width:100%"></label>
             <button class="primary" type="submit">保存</button>
         </form>
-        <p class="hint" style="margin:6px 0 0">既定は白背景。色を選ぶか、画像URLを入れるとアイコンが変わります（一覧・詳細に反映）。</p>
+        <p class="hint" style="margin:6px 0 0">既定は白背景。色を選ぶ／画像をアップロード（PNG・JPEG・GIF・WebP、2MBまで）／画像URL指定 のいずれかでアイコンが変わります。画像が色より優先。空のURL＋ファイル無しで画像を解除。</p>
     </div>
     <?php endif; ?>
 
@@ -1820,6 +1837,7 @@ if ($route === 'product'):
         <h2>ダッシュボード</h2>
         <span class="grow"></span>
         <?php if ($editable): ?>
+            <form method="post" style="display:inline" onsubmit="return confirm('全プロジェクト箱のコストを今すぐ取得します。よろしいですか？（数が多いと少し時間がかかります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_costs"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト一括更新</button></form>
             <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
         <?php endif; ?>
         <?php if (count($memberships) > 1): ?>
@@ -1834,6 +1852,21 @@ if ($route === 'product'):
             <span class="muted"><?= h($group['name']) ?></span>
         <?php endif; ?>
     </div>
+
+    <?php if ($editable && cost_refresh_stale($gid)): ?>
+    <!-- 自動コスト更新（最後の更新から一定時間でバックグラウンド取得→更新があれば再読込） -->
+    <script>
+        (function () {
+            if (sessionStorage.getItem('abtAutoCost') === '<?= h($ymNow) ?>') return; // 同一月で多重起動防止の保険
+            const b = new URLSearchParams();
+            b.append('csrf', '<?= h($csrf) ?>'); b.append('action', 'refresh_costs'); b.append('ajax', '1');
+            fetch('index.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: b })
+                .then(r => r.json())
+                .then(d => { sessionStorage.setItem('abtAutoCost', '<?= h($ymNow) ?>'); if (d && d.ok > 0) { location.reload(); } })
+                .catch(() => {});
+        })();
+    </script>
+    <?php endif; ?>
 
     <?php if ($flashMsg): ?>
         <div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div>

@@ -854,6 +854,12 @@ function db(): PDO
         }
     }
 
+    // groups にコスト一括更新の最終時刻（自動更新の間引きに使う）
+    $grpCols = array_column($pdo->query('PRAGMA table_info(groups)')->fetchAll(), 'name');
+    if (!in_array('last_cost_refresh', $grpCols, true)) {
+        $pdo->exec('ALTER TABLE groups ADD COLUMN last_cost_refresh TEXT');
+    }
+
     // 既存 cost_project → projects 箱へ自動移行（projects が空のときだけ）
     if ((int) $pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn() === 0) {
         $now = now();
@@ -1051,6 +1057,46 @@ function set_product_alert(int $gid, string $product, ?float $amount): void
         'INSERT INTO catalog_pref (group_id, name, position, cost_alert) VALUES (:g,:n,0,:a)
          ON CONFLICT(group_id, name) DO UPDATE SET cost_alert = :a'
     )->execute([':g' => $gid, ':n' => $product, ':a' => $amount]);
+}
+
+/** $_FILES['logo_file'] を uploads/logos に保存して公開URLを返す。無ければ null。 */
+function save_uploaded_logo(int $gid, string $product): ?string
+{
+    $f = $_FILES['logo_file'] ?? null;
+    if (!$f || (($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE)) { return null; }
+    if (($f['error'] ?? 1) !== UPLOAD_ERR_OK) { throw new RuntimeException('画像アップロードに失敗しました（コード ' . (int) $f['error'] . '）。'); }
+    if (($f['size'] ?? 0) > 2 * 1024 * 1024) { throw new RuntimeException('画像は2MB以内にしてください。'); }
+    $info = @getimagesize($f['tmp_name']);
+    if ($info === false) { throw new RuntimeException('画像として読み込めませんでした。'); }
+    $ext = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'][$info['mime']] ?? null;
+    if ($ext === null) { throw new RuntimeException('PNG / JPEG / GIF / WebP のみ対応です。'); }
+    $dir = __DIR__ . '/uploads/logos';
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true)) { throw new RuntimeException('保存先フォルダを作成できませんでした。'); }
+    $fname = 'p' . substr(sha1($gid . '|' . $product), 0, 16) . '.' . $ext;
+    if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) { throw new RuntimeException('画像を保存できませんでした（書き込み権限をご確認ください）。'); }
+    return app_base_url() . '/uploads/logos/' . $fname . '?v=' . time();
+}
+
+/** 全箱のコストを一括取得（解決できる箱のみ）。['ok','fail','skip'] を返す。 */
+function refresh_all_costs(int $gid): array
+{
+    $ok = $fail = $skip = 0;
+    foreach (list_projects($gid) as $p) {
+        if (resolve_cost_source($gid, $p) === null) { $skip++; continue; }
+        try { fetch_project_cost($gid, $p); $ok++; } catch (Throwable $e) { $fail++; }
+    }
+    db()->prepare('UPDATE groups SET last_cost_refresh = :t WHERE id = :g')->execute([':t' => now(), ':g' => $gid]);
+    return ['ok' => $ok, 'fail' => $fail, 'skip' => $skip];
+}
+
+/** 最後の一括更新から $hours 時間以上経過しているか（自動更新の判定） */
+function cost_refresh_stale(int $gid, int $hours = 6): bool
+{
+    $st = db()->prepare('SELECT last_cost_refresh FROM groups WHERE id = :g');
+    $st->execute([':g' => $gid]);
+    $v = $st->fetchColumn();
+    if (!$v) { return true; }
+    return (time() - strtotime((string) $v)) > $hours * 3600;
 }
 
 /** プロダクトのアイコン見た目（背景色／画像URL）を保存 */

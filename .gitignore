@@ -29,3 +29,5 @@ __pycache__/
 .venv/
 venv/
 .env
+
+api_banto_san/uploads/
