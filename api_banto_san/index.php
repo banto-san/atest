@@ -1952,8 +1952,8 @@ if ($route === 'product'):
             <tr class="group-head" data-name="<?= h($gname) ?>" data-gi="<?= $gi ?>" onclick="toggleProduct(<?= $gi ?>)"
                 <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event,this)" ondragleave="gDragLeave(this)" ondrop="gDrop(event,this)"' : '' ?>>
                 <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え"><?= icon('grip', 16) ?></span><?php endif; ?><span id="pc<?= $gi ?>" class="caret"><?= icon('chevron', 16) ?></span></td>
-                <td><span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"><?= provider_badge($gname, 30) ?> <strong><?= h($gname) ?></strong><?php if ($provider): ?> <span class="muted">（<?= h($provider) ?>）</span><?php endif; ?>
-                    <a href="<?= h(app_url('product', ['name' => $gname])) ?>" class="detail-btn" onclick="event.stopPropagation()">詳細 <?= icon('right', 14) ?></a></span></td>
+                <td><span style="display:flex;align-items:center;gap:8px"><?= provider_badge($gname, 30, $prodMeta[$gname]['logo_color'] ?? null, $prodMeta[$gname]['logo_url'] ?? null) ?> <strong><?= h($gname) ?></strong><?php if ($provider): ?> <span class="muted">（<?= h($provider) ?>）</span><?php endif; ?>
+                    <a href="<?= h(app_url('product', ['name' => $gname])) ?>" class="detail-btn" style="margin-left:auto" onclick="event.stopPropagation()">詳細 <?= icon('right', 14) ?></a></span></td>
                 <td class="cost group-cost"><?= h($pmoneyStr) ?></td>
                 <td class="hide-sm" style="white-space:nowrap">
                     <span class="muted"><?= $nBoxes ?> 箱 / <?= count($prodSites) ?> サイト</span>
