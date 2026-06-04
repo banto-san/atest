@@ -345,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pprod = trim((string) ($_POST['product'] ?? ''));
         $pproj = trim((string) ($_POST['openai_project_id'] ?? ''));
         $ptype = (string) ($_POST['cost_type'] ?? '');
-        if (!in_array($ptype, ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi', 'gcp_bq'], true)) { $ptype = ''; }
+        if (!in_array($ptype, ['', 'openai', 'anthropic', 'twilio', 'dataforseo', 'vonage', 'serpapi', 'gcp_bq'], true)) { $ptype = ''; }
         $pacct = trim((string) ($_POST['cost_account'] ?? ''));
         if ($pname === '') { flash('err', '箱の名前は必須です。'); redirect_self(); }
         // 管理キー（OpenAI Admin）任意
@@ -384,7 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cidIn = isset($_POST['credential_id']) && $_POST['credential_id'] !== '' ? (int) $_POST['credential_id'] : null;
         $cname = trim((string) ($_POST['name'] ?? ''));
         $ctype = (string) ($_POST['cost_type'] ?? '');
-        if (!in_array($ctype, ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi', 'gcp_bq'], true)) { $ctype = ''; }
+        if (!in_array($ctype, ['', 'openai', 'anthropic', 'twilio', 'dataforseo', 'vonage', 'serpapi', 'gcp_bq'], true)) { $ctype = ''; }
         $cacct = trim((string) ($_POST['cost_account'] ?? ''));
         $cproj = trim((string) ($_POST['openai_project_id'] ?? ''));
         $csecret = (string) ($_POST['secret'] ?? '');
@@ -1264,6 +1264,7 @@ function render_modals(string $csrf, array $names, array $credentials): void
                     <select name="cost_type" id="cf_cost_type" onchange="cfTypeChange()">
                         <option value="">なし</option>
                         <option value="openai">OpenAI（Admin キー）</option>
+                        <option value="anthropic">Anthropic / Claude（Admin）</option>
                         <option value="twilio">Twilio</option>
                         <option value="dataforseo">DataForSEO</option>
                         <option value="vonage">Vonage</option>
@@ -1335,7 +1336,7 @@ function render_modals(string $csrf, array $names, array $credentials): void
         const gcp = (t === 'gcp_bq');
         document.getElementById('cf_secret_wrap').style.display = gcp ? 'none' : '';
         document.getElementById('cf_json_wrap').style.display = gcp ? '' : 'none';
-        const ph = { openai:'sk-admin-...', twilio:'Twilio Auth Token', vonage:'Vonage API Secret', dataforseo:'DataForSEO APIパスワード', serpapi:'SerpApi API Key' };
+        const ph = { openai:'sk-admin-...', anthropic:'sk-ant-admin...', twilio:'Twilio Auth Token', vonage:'Vonage API Secret', dataforseo:'DataForSEO APIパスワード', serpapi:'SerpApi API Key' };
         document.getElementById('cf_secret').placeholder = ph[t] || 'キー / トークン';
     }
     function openCred(c) {

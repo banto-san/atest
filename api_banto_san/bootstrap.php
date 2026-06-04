@@ -1203,6 +1203,10 @@ function default_guides(): array
             'needs'  => '種別=OpenAI / キー欄=Adminキー（sk-admin-… で始まる）。アカウントID欄は不要。プロジェクト別に集計したい場合は、各箱の「識別子」に proj_xxx を入れる。',
             'source' => 'OpenAI管理画面 → Settings → Organization → Admin keys で発行（組織オーナーのみ作成可）。proj_xxx は各プロジェクトの Settings → General に表示。',
             'url'    => 'https://platform.openai.com/settings/organization/admin-keys'],
+        'anthropic' => ['title' => 'Anthropic / Claude（自動取得◯）',
+            'needs'  => '種別=Anthropic / キー欄=Admin APIキー（sk-ant-admin… で始まる）。アカウントID欄は不要。',
+            'source' => 'Anthropic Console → Settings → Admin keys（組織管理者のみ作成可）。',
+            'url'    => 'https://console.anthropic.com/settings/admin-keys'],
         'twilio' => ['title' => 'Twilio（自動取得◯）',
             'needs'  => 'アカウントID欄=Account SID（ACで始まる）/ キー欄=Auth Token。',
             'source' => 'Twilio Console トップの「Account Info」に Account SID と Auth Token が表示。',
@@ -1433,6 +1437,10 @@ function fetch_project_cost(int $gid, array $project): array
             if ($key === null) { throw new RuntimeException('OpenAI Admin キー(sk-admin-...)が見つかりません。箱の編集でキーを保存してください。'); }
             $c = cost_openai($key, trim((string) ($project['openai_project_id'] ?? '')));
             break;
+        case 'anthropic':
+            if ($secret === null) { throw new RuntimeException('Anthropic の Admin APIキー(sk-ant-admin...)を箱/プロダクトに保存してください。'); }
+            $c = cost_anthropic($secret);
+            break;
         case 'twilio':
             if ($secret === null) { throw new RuntimeException('Twilioの Auth Token を箱の編集で保存してください。'); }
             $c = cost_twilio($account, $secret);
@@ -1657,6 +1665,36 @@ function fetch_cost_for(array $api): array
         case 'openai': return cost_openai($key, trim((string) ($api['cost_project'] ?? '')) ?: null);
         default: throw new RuntimeException('このプロバイダのコスト自動取得には未対応です（現在 OpenAI のみ）。');
     }
+}
+
+/** Anthropic / Claude 当月コスト（Admin APIキー sk-ant-admin... が必要）。Cost Report API。 */
+function cost_anthropic(string $key): array
+{
+    $start = gmdate('Y-m-01\T00:00:00\Z');
+    $url = 'https://api.anthropic.com/v1/organizations/cost_report?starting_at=' . rawurlencode($start) . '&limit=62';
+    $r = http_request('GET', $url, ['headers' => [
+        'x-api-key: ' . $key,
+        'anthropic-version: 2023-06-01',
+    ]]);
+    if ($r['status'] === 401 || $r['status'] === 403) {
+        throw new RuntimeException('Anthropicのコスト取得には組織の Admin APIキー(sk-ant-admin...) が必要です。通常のキーでは取得できません。');
+    }
+    if ($r['status'] !== 200) {
+        throw new RuntimeException('Anthropic コストAPIエラー (HTTP ' . $r['status'] . ')。' . substr((string) $r['body'], 0, 200));
+    }
+    $d = json_decode($r['body'], true);
+    $sum = 0.0;
+    $cur = 'USD';
+    // data[].results[] の中の amount を合算（金額キーの揺れに耐性を持たせる）
+    foreach (($d['data'] ?? []) as $bucket) {
+        foreach (($bucket['results'] ?? []) as $res) {
+            if (isset($res['currency']) && $res['currency'] !== '') { $cur = strtoupper((string) $res['currency']); }
+            if (isset($res['amount'])) {
+                $sum += is_array($res['amount']) ? (float) ($res['amount']['value'] ?? 0) : (float) $res['amount'];
+            }
+        }
+    }
+    return ['amount' => round($sum, 2), 'currency' => $cur, 'note' => 'Anthropic: Cost Report'];
 }
 
 /**
