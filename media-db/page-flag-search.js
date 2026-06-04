@@ -1,13 +1,13 @@
 /**
  * フラグ(媒体)別 逆引き検索 ページ
  * --------------------------------------------------------------------------
- * リスト元（受注の獲得元媒体）を1つ選ぶと、
- * 「そのリスト元から受注した顧客」と、その顧客たちが
- * 「他に利用している媒体」の重複ランキングを表示する。
+ * リスト元（受注の獲得元媒体）を1つ選ぶと、そのリスト元から受注した顧客を一覧表示。
+ * 各顧客は seo-hearing で「他に利用している媒体」を検索でき、
+ * ドメイン重複ランキングは seo-hearing の画面で確認する。
  */
 (function () {
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
-    const { store, calculateRanking, exportClientsCSV, refreshIcons } = AppCore;
+    const { store, exportClientsCSV, refreshIcons } = AppCore;
 
     createApp({
         setup() {
@@ -30,13 +30,9 @@
                 return store.clients.filter(c => c.sourceMediaId === selectedMediaId.value);
             });
 
-            // その顧客たちが「他に利用している媒体」のランキング
-            const flaggedMediaRanking = computed(() => calculateRanking(filteredClientsByFlag.value));
-
-            // 対象顧客の中に「他媒体」データを持つ人がいるか（空表示の出し分け用）
-            const hasOtherMediaData = computed(() =>
-                filteredClientsByFlag.value.some(c => (c.usedMediaIds || []).length > 0)
-            );
+            // seo-hearing 連携リンク
+            const seoHearingSearch = (client) => AppCore.seoHearing.searchUrl(client.name, client.address);
+            const seoHearingRanking = AppCore.seoHearing.rankingUrl();
 
             const exportCsv = () => {
                 if (!selectedMediaId.value) {
@@ -51,9 +47,8 @@
 
             return {
                 store, sourceMediaList,
-                selectedMediaId, selectedMediaName,
-                filteredClientsByFlag, flaggedMediaRanking, hasOtherMediaData,
-                exportCsv,
+                selectedMediaId, selectedMediaName, filteredClientsByFlag,
+                seoHearingSearch, seoHearingRanking, exportCsv,
             };
         }
     }).mount('#app');

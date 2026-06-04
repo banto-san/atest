@@ -5,7 +5,7 @@
  */
 (function () {
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
-    const { store, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons } = AppCore;
+    const { store, exportClientsCSV, refreshIcons } = AppCore;
 
     createApp({
         setup() {
@@ -36,13 +36,6 @@
                 return '';
             });
 
-            const periodMediaRanking = computed(() => calculateRanking(filteredClientsByDate.value));
-
-            // 対象顧客の中に「他に利用している媒体」データを持つ人がいるか（空表示の出し分け用）
-            const hasOtherMediaData = computed(() =>
-                filteredClientsByDate.value.some(c => (c.usedMediaIds || []).length > 0)
-            );
-
             const resetDateFilter = () => {
                 filterStartDate.value = '';
                 filterEndDate.value = '';
@@ -57,29 +50,9 @@
             // 受注リスト元（獲得元の媒体）
             const sourceMedia = (client) => store.media.find(m => m.id === client.sourceMediaId) || null;
 
-            // 媒体が実在ドメインを持つか（手動追加の '-' や 'unknown' は除外）
-            const hasDomain = (media) => {
-                const d = (media.domain || '').trim();
-                return d !== '' && d !== '-' && d !== 'unknown' && d.includes('.');
-            };
-            const siteUrl = (media) => 'https://' + (media.domain || '').trim().replace(/^https?:\/\//, '');
-
-            // 住所から番地（最初の数字以降）を落として「町名まで」にする
-            const strippedAddress = (client) => {
-                const a = (client.address || '').trim();
-                if (!a) return '';
-                const cut = a.replace(/[0-9０-９].*$/, '').replace(/[\s　]+$/, '').trim();
-                return cut || a;
-            };
-
-            // 会社名＋住所(番地抜き)で、その媒体サイト内をGoogle検索するURL
-            const searchUrl = (client, media) => {
-                const parts = ['"' + (client.name || '') + '"'];
-                const addr = strippedAddress(client);
-                if (addr) parts.push('"' + addr + '"');
-                parts.push(hasDomain(media) ? 'site:' + media.domain.trim().replace(/^https?:\/\//, '') : media.name);
-                return 'https://www.google.com/search?q=' + encodeURIComponent(parts.join(' '));
-            };
+            // seo-hearing 連携リンク（会社名＋住所で検索 / 重複ランキング画面）
+            const seoHearingSearch = (client) => AppCore.seoHearing.searchUrl(client.name, client.address);
+            const seoHearingRanking = AppCore.seoHearing.rankingUrl();
 
             const exportCsv = () => {
                 const label = (dateRangeText.value || '全期間').replace(/ /g, '');
@@ -93,9 +66,9 @@
             return {
                 store,
                 filterStartDate, filterEndDate, resetDateFilter,
-                filteredClientsByDate, dateRangeText, periodMediaRanking, hasOtherMediaData,
-                getMediaDetails, deleteClient, exportCsv,
-                sourceMedia, hasDomain, siteUrl, strippedAddress, searchUrl,
+                filteredClientsByDate, dateRangeText,
+                deleteClient, exportCsv, sourceMedia,
+                seoHearingSearch, seoHearingRanking,
             };
         }
     }).mount('#app');

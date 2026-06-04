@@ -117,6 +117,23 @@
     // 保存状態インジケーター（v-ifで出る loader アイコン）の再描画
     watch(() => [store.isSyncing, store.syncError], () => nextTick(refreshIcons));
 
+    // ===== seo-hearing（list-check）連携 =====
+    // 逆引き（他媒体のURL探索）とドメイン重複ランキングは seo-hearing が担当する。
+    // ※実際の検索URLの形が違う場合は、ここ（base / searchUrl の組み立て）だけ直せばOK。
+    const seoHearing = {
+        base: 'https://list.seo-hearing.com/list-check',
+        // 会社名＋住所で list-check を検索（キーワード検索）するURL
+        searchUrl(name, address) {
+            const kw = [name, address].filter(Boolean).join(' ').trim();
+            return this.base + '/list_complete/?keyword=' + encodeURIComponent(kw);
+        },
+        // リスト元別の重複（ドメイン）ランキング画面
+        rankingUrl() {
+            return this.base + '/ranking/';
+        },
+    };
+
     // ===== 公開 =====
-    window.AppCore = { store, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons };
+    window.AppCore = { store, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons, seoHearing };
 })();
+

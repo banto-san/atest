@@ -64,72 +64,36 @@ require __DIR__ . '/layout_top.php';
                             <span v-else class="text-xs text-gray-400 italic">未設定</span>
                         </div>
 
-                        <div class="mt-3 pt-3 border-t border-gray-200">
-                            <p class="text-xs font-medium text-gray-500 mb-2">他に利用している媒体（「会社名＋住所」で検索して確認）:</p>
-                            <div class="flex flex-col gap-1.5">
-                                <div v-for="media in getMediaDetails(client.usedMediaIds)" :key="media.id"
-                                     class="flex items-center justify-between gap-2 bg-white border border-gray-200 rounded px-2 py-1.5 shadow-sm">
-                                    <div class="flex items-center gap-2 min-w-0">
-                                        <span class="text-sm font-medium text-gray-700 shrink-0">{{ media.name }}</span>
-                                        <span v-if="hasDomain(media)" class="text-[10px] text-gray-400 truncate">{{ media.domain }}</span>
-                                    </div>
-                                    <div class="flex items-center gap-1 shrink-0">
-                                        <a :href="searchUrl(client, media)" target="_blank" rel="noopener"
-                                           class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:bg-blue-50 border border-blue-100 rounded px-2 py-0.5"
-                                           :title="client.name + ' を ' + media.name + ' 内で検索（' + (strippedAddress(client) || '住所未登録') + '）'">
-                                            <i data-lucide="search" class="w-3 h-3"></i> 検索
-                                        </a>
-                                        <a v-if="hasDomain(media)" :href="siteUrl(media)" target="_blank" rel="noopener"
-                                           class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:bg-gray-50 border border-gray-200 rounded px-2 py-0.5"
-                                           :title="media.name + ' のサイトを開く'">
-                                            <i data-lucide="external-link" class="w-3 h-3"></i> サイト
-                                        </a>
-                                    </div>
-                                </div>
-                                <span v-if="client.usedMediaIds.length === 0" class="text-xs text-gray-400 italic">情報なし</span>
-                            </div>
-                            <p v-if="!client.address" class="text-[11px] text-amber-600 mt-1.5">※住所が未登録です。登録すると「会社名＋住所」検索の精度が上がります（データ登録・読込から追記できます）。</p>
+                        <div class="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
+                            <a :href="seoHearingSearch(client)" target="_blank" rel="noopener"
+                               class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 shadow-sm"
+                               :title="client.name + '（' + (client.address || '住所未登録') + '）を seo-hearing で検索'">
+                                <i data-lucide="search" class="w-4 h-4"></i> seo-hearingで他媒体を調べる
+                            </a>
+                            <span v-if="!client.address" class="text-[11px] text-amber-600">※住所が未登録だと検索精度が下がります</span>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 併用媒体ランキング -->
+        <!-- 併用媒体（ドメイン）ランキング → seo-hearing で確認 -->
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-[600px]">
             <div class="flex justify-between items-center mb-4 border-b pb-2">
                 <h3 class="text-lg font-bold flex items-center text-gray-800">
                     <i data-lucide="bar-chart-3" class="w-5 h-5 mr-2 text-purple-600"></i>
-                    指定期間: 併用媒体ランキング
+                    併用媒体ランキング
                 </h3>
-                <span class="text-xs text-gray-500">対象: {{ filteredClientsByDate.length }}社</span>
             </div>
 
-            <div class="flex-1 overflow-y-auto pr-2">
-                <div v-if="periodMediaRanking.length === 0" class="text-center p-8 text-gray-500">
-                    <template v-if="!hasOtherMediaData">
-                        「他に利用している媒体」のデータがまだありません。<br>
-                        <span class="text-sm text-gray-400">（各顧客の詳細検索で他媒体を取得すると、ここに集計されます）</span>
-                    </template>
-                    <template v-else>集計データがありません。</template>
-                </div>
-                <ul v-else class="space-y-3">
-                    <li v-for="(item, index) in periodMediaRanking" :key="item.media.id"
-                        class="flex items-center p-3 rounded-lg border"
-                        :class="index < 3 ? 'bg-orange-50 border-orange-100' : 'bg-white border-gray-100'">
-                        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3 shrink-0"
-                             :class="index === 0 ? 'bg-yellow-400 text-yellow-900' : index === 1 ? 'bg-gray-300 text-gray-800' : index === 2 ? 'bg-orange-300 text-orange-900' : 'bg-gray-100 text-gray-500'">
-                            {{ index + 1 }}
-                        </div>
-                        <div class="flex-1">
-                            <div class="font-bold text-gray-900">{{ item.media.name }}</div>
-                            <div class="text-xs text-gray-500">{{ item.media.domain }}</div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-lg font-bold text-blue-600">{{ item.count }}<span class="text-sm font-normal text-gray-500 ml-1">社</span></div>
-                        </div>
-                    </li>
-                </ul>
+            <div class="flex-1 overflow-y-auto pr-2 flex flex-col items-center justify-center text-center p-6">
+                <i data-lucide="bar-chart-3" class="w-12 h-12 text-purple-300 mb-3"></i>
+                <p class="text-gray-700 mb-1 font-medium">ドメイン重複ランキングは seo-hearing で確認できます</p>
+                <p class="text-xs text-gray-400 mb-5">リスト元ごとに、よく併用されている媒体ドメインを集計した一覧です。</p>
+                <a :href="seoHearingRanking" target="_blank" rel="noopener"
+                   class="inline-flex items-center gap-2 bg-purple-600 text-white font-medium px-4 py-2 rounded-lg hover:bg-purple-700 shadow-sm">
+                    <i data-lucide="external-link" class="w-4 h-4"></i> seo-hearingで重複ランキングを見る
+                </a>
             </div>
         </div>
     </div>

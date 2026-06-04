@@ -33,57 +33,35 @@ require __DIR__ . '/layout_top.php';
         </div>
 
         <div v-else class="space-y-6">
-            <!-- 重複ランキング表 -->
-            <div class="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                <div class="bg-white px-6 py-8 border-b border-gray-200 text-center">
-                    <h3 class="font-bold text-gray-800 text-2xl mb-4">他に利用している媒体ランキング</h3>
-                    <p class="text-red-600 font-bold text-lg">「{{ selectedMediaName }}」から受注した顧客が、他に利用している媒体</p>
-                </div>
-                <div class="p-0">
-                    <div v-if="flaggedMediaRanking.length === 0" class="text-center p-8 text-gray-500">
-                        <template v-if="!hasOtherMediaData">
-                            この顧客たちの「他に利用している媒体」がまだ登録されていません。<br>
-                            <span class="text-sm text-gray-400">（各顧客の詳細検索で他媒体を取得すると、ここに集計されます）</span>
-                        </template>
-                        <template v-else>併用データがありません。</template>
-                    </div>
-                    <table v-else class="w-full text-sm text-left">
-                        <thead class="text-xs text-gray-700 bg-gray-50 border-b border-gray-200">
-                            <tr>
-                                <th scope="col" class="px-6 py-4 text-center w-24 font-bold">No.</th>
-                                <th scope="col" class="px-6 py-4 text-center font-bold">ドメイン / 媒体名</th>
-                                <th scope="col" class="px-6 py-4 text-center w-32 font-bold">重複件数</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="(item, index) in flaggedMediaRanking" :key="item.media.id" class="bg-white border-b hover:bg-blue-50 transition-colors">
-                                <td class="px-6 py-4 text-center text-gray-500">{{ index + 1 }}</td>
-                                <td class="px-6 py-4 text-center font-medium text-blue-600 hover:underline cursor-pointer">
-                                    {{ item.media.name }}
-                                    <span v-if="item.media.domain && item.media.domain !== '-' && item.media.domain !== 'unknown'" class="text-xs text-gray-400 ml-1">({{ item.media.domain }})</span>
-                                </td>
-                                <td class="px-6 py-4 text-center font-bold text-gray-700">{{ item.count }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+            <!-- ドメイン重複ランキングは seo-hearing で確認 -->
+            <div class="border border-purple-200 rounded-xl bg-purple-50 p-6 text-center">
+                <p class="text-gray-700 font-medium mb-1">「{{ selectedMediaName }}」の<b>ドメイン重複ランキング</b>は seo-hearing で確認できます</p>
+                <p class="text-xs text-gray-500 mb-4">このリスト元の顧客が、他によく利用している媒体ドメインの集計です。</p>
+                <a :href="seoHearingRanking" target="_blank" rel="noopener"
+                   class="inline-flex items-center gap-2 bg-purple-600 text-white font-medium px-4 py-2 rounded-lg hover:bg-purple-700 shadow-sm">
+                    <i data-lucide="external-link" class="w-4 h-4"></i> seo-hearingで重複ランキングを見る
+                </a>
             </div>
 
             <!-- 該当顧客リスト -->
-            <div class="border border-gray-200 rounded-xl overflow-hidden mt-8">
+            <div class="border border-gray-200 rounded-xl overflow-hidden mt-6">
                 <div class="bg-gray-100 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 flex justify-between">
                     <span>「{{ selectedMediaName }}」から受注した顧客一覧 ({{ filteredClientsByFlag.length }}社)</span>
                 </div>
-                <div class="max-h-[400px] overflow-y-auto bg-white p-4">
+                <div class="max-h-[460px] overflow-y-auto bg-white p-4">
                     <ul class="space-y-3">
                         <li v-for="client in filteredClientsByFlag" :key="client.id" class="p-4 border border-gray-100 rounded-lg shadow-sm">
                             <div class="flex justify-between items-center mb-2">
                                 <h4 class="font-bold text-gray-900 text-lg">{{ client.name }}</h4>
                                 <span class="text-xs text-gray-500">受注日: {{ client.orderDate }}</span>
                             </div>
-                            <div class="flex gap-2 mb-3">
+                            <div class="flex flex-wrap items-center gap-2">
                                 <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{{ client.industry }}</span>
                                 <span v-if="client.address" class="text-xs bg-gray-50 text-gray-500 px-2 py-0.5 rounded border">{{ client.address }}</span>
+                                <a :href="seoHearingSearch(client)" target="_blank" rel="noopener"
+                                   class="inline-flex items-center gap-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded px-2 py-1 ml-auto">
+                                    <i data-lucide="search" class="w-3 h-3"></i> seo-hearingで他媒体を調べる
+                                </a>
                             </div>
                         </li>
                     </ul>
