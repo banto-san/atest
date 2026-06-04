@@ -364,6 +364,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare('UPDATE projects SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND group_id=:g')
                 ->execute([':e'=>encrypt_secret($secretIn), ':h'=>secret_hint($secretIn), ':f'=>secret_fingerprint($secretIn), ':id'=>$pidIn, ':g'=>$gid]);
         }
+        if ($mcost !== null) { $sp = get_project($gid, $pidIn); if ($sp) { snapshot_box($gid, $sp); } }
         flash('ok', 'プロジェクト箱を保存しました。');
         redirect_self();
     }
@@ -439,6 +440,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($url !== '' && !preg_match('#^https?://#i', $url)) { $url = ''; }
         if ($prod !== '') { set_product_logo($gid, $prod, $color, $url); }
         flash('ok', 'アイコンの見た目を保存しました。');
+        redirect_self();
+    }
+
+    if ($action === 'save_product_alert') {
+        require_role_at_least($gid, 'member');
+        $prod = (string) ($_POST['product'] ?? '');
+        $raw = trim((string) ($_POST['cost_alert'] ?? ''));
+        $amt = ($raw === '') ? null : (float) $raw;
+        if ($prod !== '') { set_product_alert($gid, $prod, $amt); }
+        flash('ok', $amt === null ? 'コスト警告しきい値を解除しました。' : 'コスト警告しきい値を保存しました。');
+        redirect_self();
+    }
+
+    if ($action === 'snapshot_all') {
+        require_role_at_least($gid, 'member');
+        $n = snapshot_all($gid);
+        flash('ok', $n . '件の箱を今月（' . month_key() . '）のスナップショットに記録しました。');
         redirect_self();
     }
 
@@ -603,6 +621,10 @@ $prodCredSet = [];
 foreach ($pdo->query("SELECT name FROM catalog_pref WHERE group_id = " . (int) $gid . " AND credential_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN) as $pn) { $prodCredSet[(string) $pn] = true; }
 // プロダクトのアイコン見た目（色/画像）
 $prodMeta = list_product_meta($gid);
+// 月次スナップショット（前月比・推移用）
+$snap = product_month_snapshots($gid);
+$ymNow = month_key();
+$ymPrev = month_key(-1);
 
 // 箱ごとのURL件数（フィルタ非依存）
 $boxUrlCount = [];
@@ -1465,6 +1487,7 @@ if ($route === 'manage'):
     <div class="panel" style="margin-bottom:18px">
         <h3 style="display:flex;align-items:center;gap:8px"><?= icon('box', 16) ?> プロジェクト箱の一覧・管理（<?= count($projects) ?>）
             <span class="grow" style="flex:1"></span>
+            <form method="post" style="display:inline;margin-right:6px"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="snapshot_all"><button class="btn" type="submit" title="全箱の現在の月額を今月の履歴に記録"><?= icon('refresh', 15) ?> 今月を記録</button></form>
             <button class="btn" type="button" onclick="openProject({})"><?= icon('plus', 15) ?> 箱を追加</button></h3>
         <?php if ($projects): ?>
         <table>
@@ -1599,6 +1622,53 @@ if ($route === 'product'):
                 </div>
             </div>
         </div>
+    </div>
+
+    <?php
+        // ===== コスト推移・前月比・しきい値 =====
+        $dCur = ''; $dVal = 0.0;
+        foreach ($pcost as $cur => $v) { if ($v > $dVal) { $dVal = $v; $dCur = $cur; } }
+        if ($dCur === '') { $dCur = 'JPY'; }
+        $months = []; for ($i = 5; $i >= 0; $i--) { $months[] = month_key(-$i); }
+        $series = []; $smax = 0.0;
+        foreach ($months as $ym) {
+            $val = ($ym === $ymNow) ? (float) ($pcost[$dCur] ?? 0) : (float) ($snap[$pname][$ym][$dCur] ?? 0);
+            $series[$ym] = $val; if ($val > $smax) { $smax = $val; }
+        }
+        $curV = (float) ($pcost[$dCur] ?? 0);
+        $prevV = (float) ($snap[$pname][$ymPrev][$dCur] ?? 0);
+        $dpct = ($prevV > 0) ? ($curV - $prevV) / $prevV * 100 : null;
+        $alertV = (($prodMeta[$pname]['cost_alert'] ?? null) !== null) ? (float) $prodMeta[$pname]['cost_alert'] : null;
+        $overV = ($alertV !== null && $curV > $alertV);
+    ?>
+    <div class="panel" style="margin-bottom:18px">
+        <h3><?= icon('refresh', 16) ?> コスト推移（<?= h($dCur) ?>・月次）</h3>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px">
+            <div><span class="muted" style="font-size:12px">今月</span> <strong style="font-size:20px"><?= h($dCur) ?> <?= number_format($curV, (fmod($curV,1.0)===0.0)?0:2) ?></strong></div>
+            <?php if ($dpct !== null): $up = $dpct >= 0; ?>
+                <div class="<?= $up ? 'pcard-diff up' : 'pcard-diff down' ?>" style="font-size:14px"><?= $up ? '▲' : '▼' ?> <?= abs(round($dpct, 1)) ?>% <span class="muted">先月（<?= h($dCur) ?> <?= number_format($prevV) ?>）比</span></div>
+            <?php else: ?><div class="muted" style="font-size:12px">前月データなし</div><?php endif; ?>
+            <?php if ($overV): ?><span class="pcard-warn" style="position:static"><?= icon('refresh', 12) ?> しきい値超過</span><?php endif; ?>
+        </div>
+        <?php if ($smax > 0): foreach ($series as $ym => $val): ?>
+            <div class="bar-row">
+                <span class="nm" style="flex:0 0 64px"><?= h(substr($ym, 5)) ?>月</span>
+                <span class="bar-track"><span class="bar-fill" style="width:<?= round($val / $smax * 100, 1) ?>%;background:<?= $ym === $ymNow ? 'var(--accent)' : '#9bbbe8' ?>"></span></span>
+                <span class="v"><?= number_format($val, (fmod($val,1.0)===0.0)?0:2) ?></span>
+            </div>
+        <?php endforeach; else: ?>
+            <p class="hint">まだ履歴がありません。コスト取得（⟳）や保存をすると当月のスナップショットが記録され、翌月から推移が見られます。</p>
+        <?php endif; ?>
+        <?php if ($editable && $pname !== '（プロダクト未指定）'): ?>
+        <form method="post" class="toolbar" style="margin:12px 0 0;box-shadow:none;border:none;padding:0;background:none;align-items:flex-end">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="save_product_alert">
+            <input type="hidden" name="product" value="<?= h($pname) ?>">
+            <label style="font-size:12px;color:var(--muted)">使いすぎ警告のしきい値（<?= h($dCur) ?>/月）<br><input type="number" name="cost_alert" min="0" step="1" value="<?= $alertV !== null ? (int) $alertV : '' ?>" placeholder="例: 50000" style="width:160px"></label>
+            <button class="primary" type="submit">保存</button>
+            <span class="hint">今月の合計がこの額を超えると「使いすぎ」表示。空欄で解除。</span>
+        </form>
+        <?php endif; ?>
     </div>
 
     <div class="detail-grid">
@@ -1883,8 +1953,16 @@ if ($route === 'product'):
             foreach ($cboxes as $b) { if ($b['monthly_cost'] !== null) { $cur = $b['currency'] ?: 'USD'; $cmoney[$cur] = ($cmoney[$cur] ?? 0) + (float) $b['monthly_cost']; } }
             ksort($cmoney);
             $cmeta = $prodMeta[$gname] ?? null;
+            // 主要通貨で前月比＋しきい値判定
+            $domCur = ''; $domVal = 0.0;
+            foreach ($cmoney as $cur => $v) { if ($v > $domVal) { $domVal = $v; $domCur = $cur; } }
+            $prevVal = ($domCur !== '') ? ($snap[$gname][$ymPrev][$domCur] ?? null) : null;
+            $diffPct = ($prevVal !== null && $prevVal > 0) ? ($domVal - $prevVal) / $prevVal * 100 : null;
+            $alert = (($cmeta['cost_alert'] ?? null) !== null) ? (float) $cmeta['cost_alert'] : null;
+            $over = ($alert !== null && $domVal > $alert);
         ?>
-        <a class="pcard" href="<?= h(app_url('product', ['name' => $gname])) ?>">
+        <a class="pcard<?= $over ? ' over' : '' ?>" href="<?= h(app_url('product', ['name' => $gname])) ?>">
+            <?php if ($over): ?><span class="pcard-warn"><?= icon('refresh', 12) ?> 使いすぎ</span><?php endif; ?>
             <div class="pcard-top">
                 <?= provider_badge($gname, 44, $cmeta['logo_color'] ?? null, $cmeta['logo_url'] ?? null) ?>
                 <div style="min-width:0">
@@ -1893,6 +1971,11 @@ if ($route === 'product'):
                 </div>
             </div>
             <div class="pcard-amt"><?php if ($cmoney): $first = true; foreach ($cmoney as $cur => $v): ?><?= $first ? '' : '<br>' ?><small><?= h($cur) ?></small> <?= number_format($v, (fmod($v,1.0)===0.0)?0:2) ?><?php $first = false; endforeach; else: ?><span class="muted" style="font-size:15px">未設定</span><?php endif; ?></div>
+            <?php if ($diffPct !== null): $up = $diffPct >= 0; ?>
+                <div class="pcard-diff <?= $up ? 'up' : 'down' ?>"><?= $up ? '▲' : '▼' ?> <?= abs(round($diffPct)) ?>% <span class="muted">先月比</span></div>
+            <?php elseif ($alert !== null): ?>
+                <div class="pcard-diff muted">上限 <?= h($domCur ?: '') ?> <?= number_format($alert) ?></div>
+            <?php endif; ?>
             <div class="pcard-meta"><span><?= icon('box', 14) ?> <?= count($cboxes) ?> 箱</span><span><?= icon('globe', 14) ?> <?= count($csites) ?> サイト</span></div>
             <span class="detail-btn">詳細 <?= icon('right', 14) ?></span>
         </a>

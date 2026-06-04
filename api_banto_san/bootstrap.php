@@ -377,6 +377,12 @@ function render_styles(): void { ?>
     .pcard-amt small { font-size:12px; color:var(--muted); font-weight:600; }
     .pcard-meta { font-size:12.5px; color:var(--muted); display:flex; gap:10px; flex-wrap:wrap; margin-top:auto; }
     .pcard .detail-btn { align-self:flex-start; margin-top:4px; }
+    .pcard-diff { font-size:12px; font-weight:700; }
+    .pcard-diff.up { color:#dc2626; } .pcard-diff.down { color:#16a34a; }
+    .pcard.over { border-color:#f3b4b4; box-shadow:0 6px 20px rgba(220,38,38,.12); }
+    .pcard-warn { position:absolute; top:10px; right:10px; background:#fdecec; color:#b42318; font-size:11px; font-weight:700;
+        padding:2px 8px; border-radius:999px; display:inline-flex; align-items:center; gap:3px; }
+    .pcard-warn .ic { color:#b42318; }
     @media (max-width:560px){ .card-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .pcard{ padding:13px; } .pcard-amt{ font-size:18px; } }
     .guide-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; align-items:stretch; }
     .guide-card { height:100%; }
@@ -782,6 +788,20 @@ function db(): PDO
         )
     SQL);
 
+    // 月次コストスナップショット（箱単位・月ごと）。推移と前月比に使う。
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS cost_snapshots (
+            group_id    INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            ym          TEXT    NOT NULL,
+            project_id  INTEGER NOT NULL,
+            product     TEXT    NOT NULL DEFAULT '',
+            amount      REAL    NOT NULL DEFAULT 0,
+            currency    TEXT    NOT NULL DEFAULT 'JPY',
+            captured_at TEXT    NOT NULL,
+            PRIMARY KEY (group_id, ym, project_id)
+        )
+    SQL);
+
     $cols = $pdo->query('PRAGMA table_info(apis)')->fetchAll();
     $hasGroup = false;
     foreach ($cols as $c) {
@@ -828,7 +848,7 @@ function db(): PDO
     if (!in_array('credential_id', $prefCols, true)) {
         $pdo->exec('ALTER TABLE catalog_pref ADD COLUMN credential_id INTEGER');
     }
-    foreach (['logo_color' => 'TEXT', 'logo_url' => 'TEXT'] as $col => $type) {
+    foreach (['logo_color' => 'TEXT', 'logo_url' => 'TEXT', 'cost_alert' => 'REAL'] as $col => $type) {
         if (!in_array($col, $prefCols, true)) {
             $pdo->exec("ALTER TABLE catalog_pref ADD COLUMN $col $type");
         }
@@ -974,11 +994,63 @@ function set_product_credential(int $gid, string $product, ?int $credId): void
 /** プロダクトメタ（logo_color/logo_url/credential_id）を name => row で返す */
 function list_product_meta(int $gid): array
 {
-    $st = db()->prepare('SELECT name, credential_id, logo_color, logo_url FROM catalog_pref WHERE group_id = :g');
+    $st = db()->prepare('SELECT name, credential_id, logo_color, logo_url, cost_alert FROM catalog_pref WHERE group_id = :g');
     $st->execute([':g' => $gid]);
     $out = [];
     foreach ($st->fetchAll() as $r) { $out[$r['name']] = $r; }
     return $out;
+}
+
+/** 年月キー（'2026-06'）。$offset で過去/未来へ。 */
+function month_key(int $offset = 0): string
+{
+    return date('Y-m', strtotime(date('Y-m-01') . " {$offset} month"));
+}
+
+/** 箱の現在の月額を当月スナップショットに記録（upsert） */
+function snapshot_box(int $gid, array $project): void
+{
+    if (($project['monthly_cost'] ?? null) === null) { return; }
+    db()->prepare(
+        'INSERT INTO cost_snapshots (group_id, ym, project_id, product, amount, currency, captured_at)
+         VALUES (:g,:ym,:pid,:prod,:amt,:cur,:at)
+         ON CONFLICT(group_id, ym, project_id) DO UPDATE SET product=:prod, amount=:amt, currency=:cur, captured_at=:at'
+    )->execute([
+        ':g' => $gid, ':ym' => month_key(), ':pid' => (int) $project['id'],
+        ':prod' => (string) ($project['product'] ?? ''), ':amt' => (float) $project['monthly_cost'],
+        ':cur' => ($project['currency'] ?? 'JPY') ?: 'JPY', ':at' => now(),
+    ]);
+}
+
+/** 全箱を当月スナップショットに記録。記録件数を返す。 */
+function snapshot_all(int $gid): int
+{
+    $n = 0;
+    foreach (list_projects($gid) as $p) {
+        if ($p['monthly_cost'] !== null) { snapshot_box($gid, $p); $n++; }
+    }
+    return $n;
+}
+
+/** プロダクト×年月×通貨の合計スナップショット [product][ym][cur]=amount */
+function product_month_snapshots(int $gid): array
+{
+    $st = db()->prepare('SELECT ym, product, currency, SUM(amount) amt FROM cost_snapshots WHERE group_id = :g GROUP BY ym, product, currency');
+    $st->execute([':g' => $gid]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) {
+        $out[(string) $r['product']][(string) $r['ym']][(string) $r['currency']] = (float) $r['amt'];
+    }
+    return $out;
+}
+
+/** プロダクトの月次アラート閾値を保存（null で解除） */
+function set_product_alert(int $gid, string $product, ?float $amount): void
+{
+    db()->prepare(
+        'INSERT INTO catalog_pref (group_id, name, position, cost_alert) VALUES (:g,:n,0,:a)
+         ON CONFLICT(group_id, name) DO UPDATE SET cost_alert = :a'
+    )->execute([':g' => $gid, ':n' => $product, ':a' => $amount]);
 }
 
 /** プロダクトのアイコン見た目（背景色／画像URL）を保存 */
@@ -1261,6 +1333,9 @@ function fetch_project_cost(int $gid, array $project): array
     }
     db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, balance = COALESCE(:bal, balance), updated_at = :u WHERE id = :id AND group_id = :g')
         ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':bal' => $balance, ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
+    // 当月スナップショットに記録（推移・前月比用）
+    $project['monthly_cost'] = $c['amount']; $project['currency'] = $c['currency'];
+    snapshot_box($gid, $project);
     if ($balance !== null) { $c['note'] = ($c['note'] ?? '') . ' / 残高 ' . $c['currency'] . ' ' . number_format($balance, 2); }
     return $c;
 }
