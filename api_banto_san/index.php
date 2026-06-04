@@ -897,8 +897,8 @@ function render_styles(): void { ?>
     .bar-row .v { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; }
     .product-link { color:var(--accent); text-decoration:none; font-size:13px; word-break:break-all; }
     .product-link:hover { text-decoration:underline; }
-    .guide-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; align-items:start; }
-    @media (max-width:1100px){ .guide-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+    .guide-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; align-items:stretch; }
+    .guide-card { height:100%; }
     @media (max-width:680px){ .guide-grid { grid-template-columns:1fr; } }
     .guide-card .guide-row { display:flex; gap:8px; font-size:13px; padding:6px 0; border-top:1px solid var(--line); }
     .guide-card .guide-row:first-of-type { border-top:none; }
@@ -989,9 +989,12 @@ function render_styles(): void { ?>
     .gbtn:hover { background:#f8fafc; }
     @media (max-width:820px){
         .layout{flex-direction:column;}
-        .sidebar{width:auto;flex:none;height:auto;position:static;display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-right:none;border-bottom:1px solid var(--line);}
-        .sidebar .brand{padding:6px 8px;} .sidebar .navlabel{display:none;}
-        .sidebar a.nav{margin:0;padding:8px 10px;} .sidebar .who{border-top:none;margin:0;}
+        .sidebar{width:auto;flex:none;height:auto;position:static;display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-right:none;border-bottom:1px solid var(--line);padding:10px 12px;}
+        .sidebar .brand{flex:1 1 100%;margin:0 0 6px;padding:9px 12px;border-bottom:none;border-image:none;border-radius:10px;font-size:16px;}
+        .sidebar .navlabel{display:none;}
+        .sidebar a.nav{margin:0;padding:7px 11px;font-size:13px;}
+        .sidebar a.nav.active{box-shadow:none;}
+        .sidebar .who{display:none;}
         .main{padding:14px;}
         .grid{grid-template-columns:1fr;}
         .detail-grid{grid-template-columns:1fr;}
