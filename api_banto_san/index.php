@@ -813,8 +813,8 @@ function render_styles(): void { ?>
 <link rel="icon" type="image/svg+xml" href="<?= h(app_base_url()) ?>/favicon.svg">
 <style>
     :root {
-        --bg:#eef1f6; --card:#fff; --line:#e8ebf0; --ink:#1f2733;
-        --muted:#8a93a0; --accent:#1f3a8a; --accent-d:#162c66; --gold:#e0a93b;
+        --bg:#eef5fc; --card:#fff; --line:#e3ebf3; --ink:#21303d;
+        --muted:#8a93a0; --accent:#2f7ad6; --accent-d:#1f5fb0; --gold:#f5b81e;
         --ok-bg:#e7f6ec; --ok-ink:#1a7f43; --err-bg:#fdecec; --err-ink:#b42318;
         --radius:16px; --shadow:0 6px 24px rgba(31,41,55,.06);
     }
@@ -832,7 +832,7 @@ function render_styles(): void { ?>
     .sidebar .navlabel { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; padding:14px 10px 6px; }
     .sidebar a.nav { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; color:#46505e; text-decoration:none; font-size:14px; font-weight:600; margin-bottom:2px; }
     .sidebar a.nav:hover { background:#f3f5f9; color:var(--ink); }
-    .sidebar a.nav.active { background:var(--accent); color:#fff; box-shadow:0 6px 16px rgba(31,58,138,.30); }
+    .sidebar a.nav.active { background:var(--accent); color:#fff; box-shadow:0 6px 16px rgba(47,122,214,.34); }
     .sidebar .who { display:flex; align-items:center; gap:8px; font-size:13px; padding:10px 8px; border-top:1px solid var(--line); margin-top:14px; }
     .sidebar .who img { width:30px; height:30px; border-radius:50%; }
     .main { flex:1; min-width:0; padding:22px 26px; }
@@ -860,7 +860,7 @@ function render_styles(): void { ?>
 
     /* ===== ヒーロー（全体サマリ）＋ ドーナツ ===== */
     .hero { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
-    .hero-main { flex:1 1 320px; background:linear-gradient(135deg,#14245c,#1f3a8a 60%,#2a4fb0); color:#fff;
+    .hero-main { flex:1 1 320px; background:linear-gradient(135deg,#1f5fb0,#2f7ad6 55%,#5aa6ec); color:#fff;
         border-top:4px solid var(--gold);
         border-radius:var(--radius); padding:22px 24px; box-shadow:var(--shadow); display:flex; flex-direction:column; }
     .hero-label { font-size:12px; letter-spacing:.04em; opacity:.85; }
@@ -905,7 +905,7 @@ function render_styles(): void { ?>
     .guide-label { flex:0 0 84px; color:var(--muted); font-weight:700; }
     .fab { position:fixed; right:22px; bottom:22px; z-index:200; display:inline-flex; align-items:center; gap:8px;
         padding:12px 18px; border-radius:999px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px;
-        box-shadow:0 10px 26px rgba(31,58,138,.40); cursor:pointer; }
+        box-shadow:0 10px 26px rgba(47,122,214,.42); cursor:pointer; }
     .fab:hover { background:var(--accent-d); }
     .fab .ic { color:#fff; }
     .fab.active { background:var(--gold); color:#3a2a05; box-shadow:0 10px 26px rgba(224,169,59,.45); }
@@ -984,6 +984,8 @@ function render_styles(): void { ?>
     .note-cell { max-width:220px; }
     .login-box { max-width:420px; margin:8vh auto; background:var(--card); border:1px solid var(--line);
         border-radius:16px; padding:32px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.06); }
+    .duck-hero { display:flex; justify-content:center; }
+    .duck-hero .duck { filter:drop-shadow(0 4px 8px rgba(47,122,214,.25)); image-rendering:pixelated; }
     .gbtn { display:inline-flex; align-items:center; gap:10px; padding:11px 18px; border:1px solid var(--line);
         border-radius:10px; background:#fff; color:#1f2733; text-decoration:none; font-weight:600; font-size:15px; }
     .gbtn:hover { background:#f8fafc; }
@@ -998,7 +1000,7 @@ function render_styles(): void { ?>
         /* 既定は閉じる：ブランドだけ表示 */
         .sidebar a.nav, .sidebar .who{display:none;}
         /* 開いたとき：暖簾風ドロップダウン */
-        .sidebar.open{background:#16265e;border-radius:0 0 14px 14px;padding-bottom:12px;}
+        .sidebar.open{background:#1f5fb0;border-radius:0 0 14px 14px;padding-bottom:12px;}
         .sidebar.open .brand{border-bottom:6px solid;border-image:repeating-linear-gradient(90deg,#e0a93b 0 16px,#fff 16px 32px) 1;border-radius:10px 10px 0 0;margin-bottom:8px;}
         .sidebar.open a.nav{display:flex;width:auto;margin:5px 10px;padding:11px 14px;font-size:14px;color:#eef1fb;background:rgba(255,255,255,.07);border-radius:10px;}
         .sidebar.open a.nav .ic{color:#dbe2f5;}
@@ -1035,7 +1037,8 @@ function render_login_page(): void
 <div class="wrap">
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
     <div class="login-box">
-        <h2 style="margin-top:0">ログイン</h2>
+        <div class="duck-hero"><?= duck_svg(9) ?></div>
+        <h2 style="margin-top:0"><?= h(APP_NAME) ?></h2>
         <p class="muted">Googleアカウントでログインしてください。<br>パスワードは保持しません。</p>
         <?php if ($hasGoogle): ?>
             <p><a class="gbtn" href="<?= h(app_url('login')) ?>">
@@ -2124,7 +2127,7 @@ if ($route === 'product'):
 
     <!-- プロダクト → プロジェクト箱 → URL ビュー -->
     <?php if (!$tree): ?>
-        <div class="empty">該当するデータがありません。<?= $editable ? '「＋ API を追加」または「スキャン」で取り込んでください。' : '' ?></div>
+        <div class="empty"><div class="duck-hero" style="margin-bottom:10px"><?= duck_svg(7) ?></div>該当するデータがありません。<?= $editable ? '「＋ API を追加」または「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
     <p class="hint" style="margin:0 0 8px">展開：プロダクト → プロジェクト箱 → URL。URL/サイトの☑を選び、下で「箱へ移動」できます。</p>
     <?php if ($editable): ?>

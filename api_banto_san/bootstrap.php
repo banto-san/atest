@@ -160,6 +160,43 @@ function icon(string $name, int $size = 18): string
     return '<svg class="ic" width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $body . '</svg>';
 }
 
+/** ドット絵のアヒル（豆絞り手ぬぐい付き）マスコットを SVG で返す。$px=1ドットのサイズ。 */
+function duck_svg(int $px = 8): string
+{
+    $grid = [
+        '................',
+        '....WWWWW.......',
+        '...WnWWWnW......',
+        '...WWWWWWW......',
+        '....YYYYYY......',
+        '...YYYYYYYY.....',
+        '...YYeLYYYYBBB..',
+        '...YYYYYYYYBBB..',
+        '..YYYYYYYYYY....',
+        '.YYYYYYYYYYYYY..',
+        'YYYYYYYYYYYYYYY.',
+        'YYYYYYYYYYYYYYYY',
+        'YYYYYYYYYYYYYYY.',
+        '.YYYYYYYYYYYYY..',
+        '..oYYYYYYYYYo...',
+        '... wwww wwww...',
+    ];
+    $map = ['Y' => '#FFCE2B', 'o' => '#E2960F', 'e' => '#20303A', 'L' => '#FFFFFF',
+            'B' => '#FF7A30', 'W' => '#FFFFFF', 'n' => '#1F3A8A', 'w' => '#7FC4F2'];
+    $w = 16; $n = count($grid);
+    $out = '<svg xmlns="http://www.w3.org/2000/svg" width="' . ($w * $px) . '" height="' . ($n * $px) . '" viewBox="0 0 ' . ($w * $px) . ' ' . ($n * $px) . '" shape-rendering="crispEdges" class="duck" aria-hidden="true">';
+    foreach ($grid as $y => $row) {
+        $len = strlen($row);
+        for ($x = 0; $x < $len; $x++) {
+            $ch = $row[$x];
+            if (isset($map[$ch])) {
+                $out .= '<rect x="' . ($x * $px) . '" y="' . ($y * $px) . '" width="' . $px . '" height="' . $px . '" fill="' . $map[$ch] . '"/>';
+            }
+        }
+    }
+    return $out . '</svg>';
+}
+
 function csrf_token(): string
 {
     if (empty($_SESSION['csrf'])) {
