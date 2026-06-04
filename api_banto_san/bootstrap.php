@@ -225,15 +225,37 @@ function badge_color(string $s): string
     return $colors[abs(crc32($s)) % count($colors)];
 }
 
-/** プロダクト（会社）のロゴバッジ。既知ドメインはファビコン、無ければ頭文字＋ブランド色の円。 */
-function provider_badge(string $name, int $size = 34): string
+/** #rrggbb が明るい色か（白文字/黒文字の判定用） */
+function badge_is_light(string $hex): bool
+{
+    $hex = ltrim(trim($hex), '#');
+    if (strlen($hex) === 3) { $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2]; }
+    if (strlen($hex) !== 6 || !ctype_xdigit($hex)) { return true; }
+    $r = hexdec(substr($hex, 0, 2)); $g = hexdec(substr($hex, 2, 2)); $b = hexdec(substr($hex, 4, 2));
+    return (0.299 * $r + 0.587 * $g + 0.114 * $b) > 160;
+}
+
+/**
+ * プロダクト（会社）のロゴバッジ。
+ * $color/$img でプロダクトごとに上書き可。未指定の既定は「白背景」。
+ *   - $img があれば画像を表示
+ *   - 無ければ 背景色（既定=白）＋頭文字、既知サービスはファビコンを重ねる
+ */
+function provider_badge(string $name, int $size = 34, ?string $color = null, ?string $img = null): string
 {
     $name = trim($name) !== '' ? trim($name) : '?';
-    $dom = provider_domain($name);
-    $color = badge_color($name);
-    $mono = h(mb_strtoupper(mb_substr($name, 0, 1)));
     $fs = (int) round($size * 0.5);
-    $out = '<span class="plogo" style="width:' . $size . 'px;height:' . $size . 'px;background:' . $color . ';font-size:' . $fs . 'px">';
+    $sz = 'width:' . $size . 'px;height:' . $size . 'px';
+    if ($img !== null && trim($img) !== '') {
+        return '<span class="plogo" style="' . $sz . ';background:#fff;border:1px solid var(--line)"><img class="full" src="' . h($img) . '" alt="" loading="lazy" onerror="this.remove()"></span>';
+    }
+    $bg = ($color !== null && trim($color) !== '') ? trim($color) : '#ffffff';
+    $light = badge_is_light($bg);
+    $txt = $light ? 'var(--accent)' : '#fff';
+    $border = $light ? 'border:1px solid var(--line);' : '';
+    $dom = provider_domain($name);
+    $mono = h(mb_strtoupper(mb_substr($name, 0, 1)));
+    $out = '<span class="plogo" style="' . $sz . ';background:' . h($bg) . ';color:' . $txt . ';' . $border . 'font-size:' . $fs . 'px">';
     $out .= '<span class="mono">' . $mono . '</span>';
     if ($dom !== '') {
         $out .= '<img src="https://www.google.com/s2/favicons?sz=64&domain=' . h($dom) . '" alt="" loading="lazy" onerror="this.remove()">';
@@ -341,6 +363,21 @@ function render_styles(): void { ?>
         color:#fff; font-weight:800; flex:0 0 auto; vertical-align:middle; box-shadow:0 2px 6px rgba(31,48,61,.15); }
     .plogo .mono { line-height:1; }
     .plogo img { position:absolute; top:16%; left:16%; width:68%; height:68%; object-fit:contain; }
+    .plogo img.full { position:absolute; inset:0; top:0; left:0; width:100%; height:100%; object-fit:contain; border-radius:50%; }
+    /* プロダクト・カード一覧 */
+    .card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:16px; }
+    .pcard { display:flex; flex-direction:column; gap:10px; background:var(--card); border:1px solid var(--line);
+        border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); text-decoration:none; color:var(--ink);
+        transition:transform .12s, box-shadow .12s; position:relative; }
+    .pcard:hover { transform:translateY(-3px); box-shadow:0 12px 28px rgba(31,48,61,.12); }
+    .pcard-top { display:flex; align-items:center; gap:10px; }
+    .pcard-name { font-weight:800; font-size:15px; line-height:1.25; }
+    .pcard-prov { font-size:11.5px; }
+    .pcard-amt { font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; color:#0f172a; }
+    .pcard-amt small { font-size:12px; color:var(--muted); font-weight:600; }
+    .pcard-meta { font-size:12.5px; color:var(--muted); display:flex; gap:10px; flex-wrap:wrap; margin-top:auto; }
+    .pcard .detail-btn { align-self:flex-start; margin-top:4px; }
+    @media (max-width:560px){ .card-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .pcard{ padding:13px; } .pcard-amt{ font-size:18px; } }
     .guide-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; align-items:stretch; }
     .guide-card { height:100%; }
     @media (max-width:680px){ .guide-grid { grid-template-columns:1fr; } }
@@ -791,6 +828,11 @@ function db(): PDO
     if (!in_array('credential_id', $prefCols, true)) {
         $pdo->exec('ALTER TABLE catalog_pref ADD COLUMN credential_id INTEGER');
     }
+    foreach (['logo_color' => 'TEXT', 'logo_url' => 'TEXT'] as $col => $type) {
+        if (!in_array($col, $prefCols, true)) {
+            $pdo->exec("ALTER TABLE catalog_pref ADD COLUMN $col $type");
+        }
+    }
 
     // 既存 cost_project → projects 箱へ自動移行（projects が空のときだけ）
     if ((int) $pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn() === 0) {
@@ -927,6 +969,25 @@ function set_product_credential(int $gid, string $product, ?int $credId): void
         'INSERT INTO catalog_pref (group_id, name, position, credential_id) VALUES (:g,:n,0,:c)
          ON CONFLICT(group_id, name) DO UPDATE SET credential_id = :c'
     )->execute([':g' => $gid, ':n' => $product, ':c' => $credId]);
+}
+
+/** プロダクトメタ（logo_color/logo_url/credential_id）を name => row で返す */
+function list_product_meta(int $gid): array
+{
+    $st = db()->prepare('SELECT name, credential_id, logo_color, logo_url FROM catalog_pref WHERE group_id = :g');
+    $st->execute([':g' => $gid]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) { $out[$r['name']] = $r; }
+    return $out;
+}
+
+/** プロダクトのアイコン見た目（背景色／画像URL）を保存 */
+function set_product_logo(int $gid, string $product, string $color, string $url): void
+{
+    db()->prepare(
+        'INSERT INTO catalog_pref (group_id, name, position, logo_color, logo_url) VALUES (:g,:n,0,:c,:u)
+         ON CONFLICT(group_id, name) DO UPDATE SET logo_color = :c, logo_url = :u'
+    )->execute([':g' => $gid, ':n' => $product, ':c' => ($color !== '' ? $color : null), ':u' => ($url !== '' ? $url : null)]);
 }
 
 /* ------------------------------------------------------------------ *

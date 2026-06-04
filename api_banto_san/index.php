@@ -430,6 +430,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'save_product_logo') {
+        require_role_at_least($gid, 'member');
+        $prod = (string) ($_POST['product'] ?? '');
+        $color = trim((string) ($_POST['logo_color'] ?? ''));
+        $url = trim((string) ($_POST['logo_url'] ?? ''));
+        if ($color !== '' && !preg_match('/^#[0-9a-fA-F]{6}$/', $color)) { $color = ''; }
+        if ($url !== '' && !preg_match('#^https?://#i', $url)) { $url = ''; }
+        if ($prod !== '') { set_product_logo($gid, $prod, $color, $url); }
+        flash('ok', 'アイコンの見た目を保存しました。');
+        redirect_self();
+    }
+
     if ($action === 'fetch_project_cost') {
         require_role_at_least($gid, 'member');
         $p = get_project($gid, (int) ($_POST['project_id'] ?? 0));
@@ -589,6 +601,8 @@ foreach ($credentials as $c) { $credById[(int) $c['id']] = $c; }
 // プロダクト既定キーを持つプロダクト名の集合（⟳コストボタン表示判定に使う）
 $prodCredSet = [];
 foreach ($pdo->query("SELECT name FROM catalog_pref WHERE group_id = " . (int) $gid . " AND credential_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN) as $pn) { $prodCredSet[(string) $pn] = true; }
+// プロダクトのアイコン見た目（色/画像）
+$prodMeta = list_product_meta($gid);
 
 // 箱ごとのURL件数（フィルタ非依存）
 $boxUrlCount = [];
@@ -1545,7 +1559,7 @@ if ($route === 'product'):
 <main class="main">
     <div class="crumb"><a href="index.php">ダッシュボード</a> ／ <?= h($pname) ?></div>
     <div class="topbar">
-        <h2 style="display:inline-flex;align-items:center;gap:10px"><?= provider_badge($pname, 36) ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
+        <h2 style="display:inline-flex;align-items:center;gap:10px"><?= provider_badge($pname, 36, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
         <span class="grow"></span>
         <?php if ($editable): ?>
             <button type="button" class="btn" onclick="openProject({product: <?= htmlspecialchars(json_encode($pname, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>})"><?= icon('plus', 15) ?> 箱を追加</button>
@@ -1633,6 +1647,17 @@ if ($route === 'product'):
             <button class="primary" type="submit">保存</button>
             <span class="hint">配下の箱が個別キー未設定のとき、このキーでコスト取得します。<a href="<?= h(app_url('manage')) ?>#credpanel">キーを管理</a></span>
         </form>
+        <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+        <h3 style="display:flex;align-items:center;gap:10px"><?= provider_badge($pname, 28, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?> アイコンの見た目</h3>
+        <form method="post" class="toolbar" style="margin:0;box-shadow:none;border:none;padding:0;background:none;align-items:flex-end">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="save_product_logo">
+            <input type="hidden" name="product" value="<?= h($pname) ?>">
+            <label style="font-size:12px;color:var(--muted)">背景色<br><input type="color" name="logo_color" value="<?= h($prodMeta[$pname]['logo_color'] ?? '#ffffff') ?>" style="width:56px;height:38px;padding:2px"></label>
+            <label style="font-size:12px;color:var(--muted);flex:1;min-width:180px">画像URL（任意・色より優先）<br><input type="url" name="logo_url" value="<?= h($prodMeta[$pname]['logo_url'] ?? '') ?>" placeholder="https://.../logo.png" style="width:100%"></label>
+            <button class="primary" type="submit">保存</button>
+        </form>
+        <p class="hint" style="margin:6px 0 0">既定は白背景。色を選ぶか、画像URLを入れるとアイコンが変わります（一覧・詳細に反映）。</p>
     </div>
     <?php endif; ?>
 
@@ -1845,8 +1870,39 @@ if ($route === 'product'):
     <?php if (!$tree): ?>
         <div class="empty"><div class="duck-hero" style="margin-bottom:10px"><img class="duckimg" src="<?= h(app_base_url()) ?>/duck2.png" alt="" style="width:96px"></div>該当するデータがありません。<?= $editable ? '「＋ API を追加」または「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
-    <p class="hint" style="margin:0 0 8px">展開：プロダクト → プロジェクト箱 → URL。URL/サイトの☑を選び、下で「箱へ移動」できます。</p>
+    <!-- プロダクト・カード一覧 -->
+    <div class="card-grid">
+        <?php foreach ($names as $gname):
+            $cprov = $providerOf[$gname] ?? '';
+            $cboxes = $boxesByProduct[$gname] ?? [];
+            $cunassigned = $unassignedByProduct[$gname] ?? [];
+            $csites = [];
+            foreach ($cboxes as $b) { foreach (($usagesByBox[(int) $b['id']] ?? []) as $u) { $csites[usage_site($u)] = 1; } }
+            foreach ($cunassigned as $u) { $csites[usage_site($u)] = 1; }
+            $cmoney = [];
+            foreach ($cboxes as $b) { if ($b['monthly_cost'] !== null) { $cur = $b['currency'] ?: 'USD'; $cmoney[$cur] = ($cmoney[$cur] ?? 0) + (float) $b['monthly_cost']; } }
+            ksort($cmoney);
+            $cmeta = $prodMeta[$gname] ?? null;
+        ?>
+        <a class="pcard" href="<?= h(app_url('product', ['name' => $gname])) ?>">
+            <div class="pcard-top">
+                <?= provider_badge($gname, 44, $cmeta['logo_color'] ?? null, $cmeta['logo_url'] ?? null) ?>
+                <div style="min-width:0">
+                    <div class="pcard-name"><?= h($gname) ?></div>
+                    <?php if ($cprov): ?><div class="pcard-prov muted"><?= h($cprov) ?></div><?php endif; ?>
+                </div>
+            </div>
+            <div class="pcard-amt"><?php if ($cmoney): $first = true; foreach ($cmoney as $cur => $v): ?><?= $first ? '' : '<br>' ?><small><?= h($cur) ?></small> <?= number_format($v, (fmod($v,1.0)===0.0)?0:2) ?><?php $first = false; endforeach; else: ?><span class="muted" style="font-size:15px">未設定</span><?php endif; ?></div>
+            <div class="pcard-meta"><span><?= icon('box', 14) ?> <?= count($cboxes) ?> 箱</span><span><?= icon('globe', 14) ?> <?= count($csites) ?> サイト</span></div>
+            <span class="detail-btn">詳細 <?= icon('right', 14) ?></span>
+        </a>
+        <?php endforeach; ?>
+    </div>
+
+    <details class="stat" style="width:100%;margin-bottom:10px">
+    <summary style="cursor:pointer;font-weight:600"><?= icon('gear', 15) ?> URLの割り当て・並び替え（詳細管理）</summary>
     <?php if ($editable): ?>
+    <p class="hint" style="margin:8px 0">展開：プロダクト → プロジェクト箱 → URL。URL/サイトの☑を選び、下で「箱へ移動」できます。</p>
     <div class="toolbar" style="margin-bottom:10px">
         <span>選択を移動 →</span>
         <select id="moveTargetSel" onchange="document.getElementById('moveNew').style.display=this.value==='new'?'flex':'none'">
@@ -1968,6 +2024,7 @@ if ($route === 'product'):
         </tbody>
     </table>
     </div>
+    </details>
     <?php endif; ?>
 
     <p class="hint" style="margin-top:18px">
