@@ -344,7 +344,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pname = trim((string) ($_POST['name'] ?? ''));
         $pprod = trim((string) ($_POST['product'] ?? ''));
         $pproj = trim((string) ($_POST['openai_project_id'] ?? ''));
-        $ptype = in_array($_POST['cost_type'] ?? '', ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi'], true) ? $_POST['cost_type'] : '';
+        $ptype = (string) ($_POST['cost_type'] ?? '');
+        if (!in_array($ptype, ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi'], true)) { $ptype = ''; }
         $pacct = trim((string) ($_POST['cost_account'] ?? ''));
         if ($pname === '') { flash('err', '箱の名前は必須です。'); redirect_self(); }
         // 管理キー（OpenAI Admin）任意
@@ -381,7 +382,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         require_role_at_least($gid, 'member');
         $cidIn = isset($_POST['credential_id']) && $_POST['credential_id'] !== '' ? (int) $_POST['credential_id'] : null;
         $cname = trim((string) ($_POST['name'] ?? ''));
-        $ctype = in_array($_POST['cost_type'] ?? '', ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi'], true) ? (string) $_POST['cost_type'] : '';
+        $ctype = (string) ($_POST['cost_type'] ?? '');
+        if (!in_array($ctype, ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi'], true)) { $ctype = ''; }
         $cacct = trim((string) ($_POST['cost_account'] ?? ''));
         $cproj = trim((string) ($_POST['openai_project_id'] ?? ''));
         $csecret = (string) ($_POST['secret'] ?? '');
