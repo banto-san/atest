@@ -100,7 +100,7 @@ function jpy_hint(?float $amount, ?string $cur): string
 {
     if ($amount === null) { return ''; }
     if (strtoupper((string) ($cur ?: '')) !== 'USD') { return ''; }
-    return ' <span class="muted" style="font-weight:400;font-size:.82em">(約 ¥' . number_format($amount * usd_jpy()) . ')</span>';
+    return '<span class="jpyhint">（JPY~' . number_format($amount * usd_jpy()) . '）</span>';
 }
 
 /** 許可メールドメインの一覧（未設定なら空＝制限なし） */
@@ -345,6 +345,7 @@ function render_styles(): void { ?>
     .hero-amount { font-size:34px; font-weight:800; line-height:1.25; font-variant-numeric:tabular-nums; }
     .hero-amount .cur { font-size:18px; font-weight:700; opacity:.85; margin-right:4px; }
     .hero-amount.muted { color:#cfd6e6; }
+    .jpyhint { font-size:.5em; font-weight:400; opacity:.7; margin-left:2px; white-space:nowrap; }
     .hero-stats { display:flex; gap:22px; margin-top:auto; padding-top:16px; }
     .hero-stats > div { display:flex; flex-direction:column; }
     .hero-stats .n { font-size:22px; font-weight:800; }
@@ -1113,6 +1114,18 @@ function refresh_all_costs(int $gid): array
         try { fetch_project_cost($gid, $p); $ok++; } catch (Throwable $e) { $fail++; }
     }
     db()->prepare('UPDATE groups SET last_cost_refresh = :t WHERE id = :g')->execute([':t' => now(), ':g' => $gid]);
+    return ['ok' => $ok, 'fail' => $fail, 'skip' => $skip];
+}
+
+/** 指定プロダクト配下の箱だけコスト一括取得。['ok','fail','skip'] を返す。 */
+function refresh_product_costs(int $gid, string $product): array
+{
+    $ok = $fail = $skip = 0;
+    foreach (list_projects($gid) as $p) {
+        if ((string) ($p['product'] ?? '') !== $product) { continue; }
+        if (resolve_cost_source($gid, $p) === null) { $skip++; continue; }
+        try { fetch_project_cost($gid, $p); $ok++; } catch (Throwable $e) { $fail++; }
+    }
     return ['ok' => $ok, 'fail' => $fail, 'skip' => $skip];
 }
 

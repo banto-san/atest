@@ -459,6 +459,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'refresh_product') {
+        require_role_at_least($gid, 'member');
+        $prod = (string) ($_POST['product'] ?? '');
+        if ($prod === '') { flash('err', 'プロダクトが指定されていません。'); redirect_self(); }
+        $r = refresh_product_costs($gid, $prod);
+        flash('ok', sprintf('「%s」のコストを更新しました（成功 %d / 失敗 %d / 対象外 %d）。', $prod, $r['ok'], $r['fail'], $r['skip']));
+        redirect_self();
+    }
+
     if ($action === 'save_product_alert') {
         require_role_at_least($gid, 'member');
         $prod = (string) ($_POST['product'] ?? '');
@@ -1614,6 +1623,7 @@ if ($route === 'product'):
         <h2 style="display:inline-flex;align-items:center;gap:10px"><?php if ($editable): ?><button type="button" class="badge-btn" onclick="openLogo()" title="アイコンを変更"><?= provider_badge($pname, 36, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?><span class="badge-pen"><?= icon('gear', 12) ?></span></button><?php else: ?><?= provider_badge($pname, 36, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?><?php endif; ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
         <span class="grow"></span>
         <?php if ($editable): ?>
+            <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($pname) ?>」配下の箱のコストを今すぐ取得します。よろしいですか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_product"><input type="hidden" name="product" value="<?= h($pname) ?>"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト更新</button></form>
             <button type="button" class="btn" onclick="openProject({product: <?= htmlspecialchars(json_encode($pname, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>})"><?= icon('plus', 15) ?> 箱を追加</button>
             <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
         <?php endif; ?>
