@@ -1612,7 +1612,7 @@ if ($route === 'product'):
 <main class="main">
     <div class="crumb"><a href="index.php">ダッシュボード</a> ／ <?= h($pname) ?></div>
     <div class="topbar">
-        <h2 style="display:inline-flex;align-items:center;gap:10px"><?= provider_badge($pname, 36, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
+        <h2 style="display:inline-flex;align-items:center;gap:10px"><?php if ($editable): ?><button type="button" class="badge-btn" onclick="openLogo()" title="アイコンを変更"><?= provider_badge($pname, 36, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?><span class="badge-pen"><?= icon('gear', 12) ?></span></button><?php else: ?><?= provider_badge($pname, 36, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?><?php endif; ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
         <span class="grow"></span>
         <?php if ($editable): ?>
             <button type="button" class="btn" onclick="openProject({product: <?= htmlspecialchars(json_encode($pname, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>})"><?= icon('plus', 15) ?> 箱を追加</button>
@@ -1747,24 +1747,21 @@ if ($route === 'product'):
             <button class="primary" type="submit">保存</button>
             <span class="hint">配下の箱が個別キー未設定のとき、このキーでコスト取得します。<a href="<?= h(app_url('manage')) ?>#credpanel">キーを管理</a></span>
         </form>
-        <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
-        <h3 style="display:flex;align-items:center;gap:10px"><?= provider_badge($pname, 28, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?> アイコンの見た目</h3>
-        <form method="post" enctype="multipart/form-data" class="toolbar" style="margin:0;box-shadow:none;border:none;padding:0;background:none;align-items:flex-end">
-            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-            <input type="hidden" name="action" value="save_product_logo">
-            <input type="hidden" name="product" value="<?= h($pname) ?>">
-            <label style="font-size:12px;color:var(--muted)">背景色<br><input type="color" name="logo_color" value="<?= h($prodMeta[$pname]['logo_color'] ?? '#ffffff') ?>" style="width:56px;height:38px;padding:2px"></label>
-            <label style="font-size:12px;color:var(--muted)">画像をアップロード<br><input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
-            <label style="font-size:12px;color:var(--muted);flex:1;min-width:160px">または画像URL<br><input type="url" name="logo_url" value="<?= h(preg_replace('/\?v=\d+$/', '', (string) ($prodMeta[$pname]['logo_url'] ?? ''))) ?>" placeholder="https://.../logo.png" style="width:100%"></label>
-            <button class="primary" type="submit">保存</button>
-        </form>
-        <p class="hint" style="margin:6px 0 0">既定は白背景。色を選ぶ／画像をアップロード（PNG・JPEG・GIF・WebP、2MBまで）／画像URL指定 のいずれかでアイコンが変わります。画像が色より優先。空のURL＋ファイル無しで画像を解除。</p>
+        <p class="hint" style="margin:10px 0 0">アイコン（見た目）の変更は、上部の<strong>アイコンをクリック</strong>してください。</p>
     </div>
     <?php endif; ?>
 
     <!-- 箱とURLの一覧（クリックで開閉・既定は閉じる） -->
     <div class="panel" style="margin-bottom:18px">
         <h3>プロジェクト箱とURL <span class="muted" style="font-weight:400">／ プロジェクト <?= count($pboxes) ?> 箱<?= $punassigned ? '＋未割当' : '' ?>（箱をクリックでURLを展開）</span></h3>
+        <?php if ($editable): ?>
+        <div class="toolbar" style="margin:0 0 10px">
+            <label class="hint" style="white-space:nowrap"><input type="checkbox" onchange="selAllDetail(this)" style="width:auto"> 全URL選択</label>
+            <button class="danger" type="button" onclick="doDeleteDetail()"><?= icon('trash', 15) ?> 選択を削除</button>
+            <span id="ddCount" class="hint"></span>
+            <span class="hint">※ URLの☑を選んでまとめて削除できます（箱を開くと表示されます）。</span>
+        </div>
+        <?php endif; ?>
         <table>
             <thead><tr><th style="width:28px"></th><th>箱 / URL</th><th>サイト</th><th>月額</th><?php if ($editable): ?><th class="hide-sm">操作</th><?php endif; ?></tr></thead>
             <tbody>
@@ -1788,7 +1785,7 @@ if ($route === 'product'):
                 <?php foreach ($bl['urls'] as $f):
                     $pathStr = usage_site($f) . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : ''); ?>
                 <tr class="box<?= $bi ?>-url" style="display:none">
-                    <td></td>
+                    <td><?php if ($editable): ?><input type="checkbox" class="dchk" value="<?= (int) $f['id'] ?>" style="width:auto"><?php endif; ?></td>
                     <td style="padding-left:20px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                         <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
                     <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
@@ -1805,7 +1802,7 @@ if ($route === 'product'):
                 <?php foreach ($uurls as $f):
                     $pathStr = usage_site($f) . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : ''); ?>
                 <tr class="box<?= $bi ?>-url" style="display:none">
-                    <td></td>
+                    <td><?php if ($editable): ?><input type="checkbox" class="dchk" value="<?= (int) $f['id'] ?>" style="width:auto"><?php endif; ?></td>
                     <td style="padding-left:20px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                         <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
                     <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
@@ -1825,12 +1822,58 @@ if ($route === 'product'):
 </div>
 <div id="abtToast"></div>
 <?php render_modals($csrf, $names, $credentials); ?>
+<?php if ($editable): ?>
+<!-- アイコンの見た目（ヘッダのアイコンクリックで開く） -->
+<dialog id="logoDialog">
+    <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="save_product_logo">
+        <input type="hidden" name="product" value="<?= h($pname) ?>">
+        <div class="modal-head" style="display:flex;align-items:center;gap:10px"><?= provider_badge($pname, 28, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?> アイコンの見た目</div>
+        <div class="modal-body">
+            <div class="grid">
+                <div class="field"><label>背景色</label><input type="color" name="logo_color" value="<?= h($prodMeta[$pname]['logo_color'] ?? '#ffffff') ?>" style="width:64px;height:40px;padding:2px"></div>
+                <div class="field"><label>画像をアップロード</label><input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></div>
+                <div class="field full"><label>または画像URL</label><input type="url" name="logo_url" value="<?= h(preg_replace('/\?v=\d+$/', '', (string) ($prodMeta[$pname]['logo_url'] ?? ''))) ?>" placeholder="https://.../logo.png"></div>
+            </div>
+            <p class="hint" style="margin:8px 0 0">既定は白背景。色／アップロード（PNG・JPEG・GIF・WebP、2MBまで）／画像URL のいずれか。画像が色より優先。空のURL＋ファイル無しで画像を解除。</p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('logoDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">保存</button>
+        </div>
+    </form>
+</dialog>
+<?php endif; ?>
 <script>
     function toggleBox(bi) {
         const caret = document.getElementById('bc' + bi);
         const open = !caret.classList.contains('open');
         document.querySelectorAll('.box' + bi + '-url').forEach(r => r.style.display = open ? 'table-row' : 'none');
         caret.classList.toggle('open', open);
+    }
+    function openLogo() { const d = document.getElementById('logoDialog'); if (d) d.showModal(); }
+    const DETAIL_CSRF = '<?= h($csrf) ?>';
+    function ddCountUpd() {
+        const n = document.querySelectorAll('.dchk:checked').length;
+        const el = document.getElementById('ddCount'); if (el) el.textContent = n ? (n + ' 件選択中') : '';
+    }
+    function selAllDetail(cb) {
+        document.querySelectorAll('.dchk').forEach(c => { c.checked = cb.checked; });
+        // 全選択時はすべての箱を開いて見えるように
+        if (cb.checked) { document.querySelectorAll('[id^="bc"]').forEach(c => { if (!c.classList.contains('open')) { const bi = c.id.slice(2); toggleBox(bi); } }); }
+        ddCountUpd();
+    }
+    document.addEventListener('change', e => { if (e.target && e.target.classList && e.target.classList.contains('dchk')) ddCountUpd(); });
+    function doDeleteDetail() {
+        const ids = [...document.querySelectorAll('.dchk:checked')].map(c => c.value);
+        if (!ids.length) { alert('削除するURLを☑で選択してください（箱を開くと表示されます。「全URL選択」も可）。'); return; }
+        if (!confirm('選択した ' + ids.length + ' 件のURLを削除します。取り消せません。よろしいですか？')) return;
+        const f = document.createElement('form'); f.method = 'post'; f.action = location.href;
+        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+        add('csrf', DETAIL_CSRF); add('action', 'delete_usages');
+        ids.forEach(id => add('usage_ids[]', id));
+        document.body.appendChild(f); f.submit();
     }
 </script>
 </body></html>

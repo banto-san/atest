@@ -362,6 +362,10 @@ function render_styles(): void { ?>
     .plogo { position:relative; display:inline-flex; align-items:center; justify-content:center; border-radius:50%;
         color:#fff; font-weight:800; flex:0 0 auto; vertical-align:middle; box-shadow:0 2px 6px rgba(31,48,61,.15); }
     .plogo .mono { line-height:1; }
+    .badge-btn { border:none; background:none; padding:0; margin:0; cursor:pointer; position:relative; display:inline-flex; line-height:0; }
+    .badge-btn .badge-pen { position:absolute; right:-5px; bottom:-5px; width:17px; height:17px; border-radius:50%; background:var(--accent);
+        display:flex; align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,.25); }
+    .badge-btn .badge-pen .ic { color:#fff; }
     .plogo img { position:absolute; top:16%; left:16%; width:68%; height:68%; object-fit:contain; }
     .plogo img.full { position:absolute; inset:0; top:0; left:0; width:100%; height:100%; object-fit:contain; border-radius:50%; }
     /* プロダクト・カード一覧 */
