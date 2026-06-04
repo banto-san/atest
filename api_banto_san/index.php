@@ -897,7 +897,9 @@ function render_styles(): void { ?>
     .bar-row .v { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; }
     .product-link { color:var(--accent); text-decoration:none; font-size:13px; word-break:break-all; }
     .product-link:hover { text-decoration:underline; }
-    .guide-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
+    .guide-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; align-items:start; }
+    @media (max-width:1100px){ .guide-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+    @media (max-width:680px){ .guide-grid { grid-template-columns:1fr; } }
     .guide-card .guide-row { display:flex; gap:8px; font-size:13px; padding:6px 0; border-top:1px solid var(--line); }
     .guide-card .guide-row:first-of-type { border-top:none; }
     .guide-label { flex:0 0 84px; color:var(--muted); font-weight:700; }
