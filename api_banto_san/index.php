@@ -828,7 +828,7 @@ function render_login_page(): void
 <div class="wrap">
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
     <div class="login-box">
-        <div class="duck-hero"><img class="duckimg" src="<?= h(app_base_url()) ?>/duck2.png" alt="" style="width:104px"></div>
+        <div class="duck-hero"><img class="duckimg duck-bob" src="<?= h(app_base_url()) ?>/duck2.png" alt="" style="width:104px"></div>
         <h2 style="margin-top:0"><?= h(APP_NAME) ?></h2>
         <p class="muted">Googleアカウントでログインしてください。<br>パスワードは保持しません。</p>
         <?php if ($hasGoogle): ?>
@@ -1638,7 +1638,7 @@ if ($route === 'product'):
 
     <!-- 箱とURLの一覧（クリックで開閉・既定は閉じる） -->
     <div class="panel" style="margin-bottom:18px">
-        <h3>プロジェクト箱とURL <span class="muted" style="font-weight:400">（箱をクリックでURLを展開）</span></h3>
+        <h3>プロジェクト箱とURL <span class="muted" style="font-weight:400">／ プロジェクト <?= count($pboxes) ?> 箱<?= $punassigned ? '＋未割当' : '' ?>（箱をクリックでURLを展開）</span></h3>
         <table>
             <thead><tr><th style="width:28px"></th><th>箱 / URL</th><th>サイト</th><th>月額</th><?php if ($editable): ?><th class="hide-sm">操作</th><?php endif; ?></tr></thead>
             <tbody>
@@ -1666,7 +1666,7 @@ if ($route === 'product'):
                     <td style="padding-left:20px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                         <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
                     <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
-                    <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
+                    <td></td><?php if ($editable): ?><td class="hide-sm" style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
                 </tr>
                 <?php endforeach; ?>
             <?php endforeach; ?>
@@ -1683,7 +1683,7 @@ if ($route === 'product'):
                     <td style="padding-left:20px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                         <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
                     <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
-                    <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
+                    <td></td><?php if ($editable): ?><td class="hide-sm" style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -1958,6 +1958,7 @@ if ($route === 'product'):
                             <strong><?= icon('globe', 15) ?> <?= h($fsite) ?></strong>
                             <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                             <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button>
+                            <?php if ($editable): ?><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form><?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 </td>

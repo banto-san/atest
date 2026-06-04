@@ -143,6 +143,7 @@ function icon(string $name, int $size = 18): string
         'lock'      => '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
         'help'      => '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
         'menu'      => '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>',
+        'trash'     => '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
         'gear'      => '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
         'chevron'   => '<polyline points="9 18 15 12 9 6"/>',
         'up'        => '<polyline points="18 15 12 9 6 15"/>',
@@ -375,6 +376,15 @@ function render_styles(): void { ?>
     .duck-hero { display:flex; justify-content:center; }
     .duck-hero .duck { filter:drop-shadow(0 4px 8px rgba(47,122,214,.25)); image-rendering:pixelated; }
     .duck-hero img.duckimg { filter:drop-shadow(0 4px 8px rgba(47,122,214,.22)); height:auto; }
+    .duck-bob { animation:duckBob 3.2s ease-in-out infinite; transform-origin:50% 80%; will-change:transform; }
+    @keyframes duckBob {
+        0%   { transform:translateY(0) rotate(-4deg); }
+        25%  { transform:translateY(-5px) rotate(0deg); }
+        50%  { transform:translateY(0) rotate(4deg); }
+        75%  { transform:translateY(-5px) rotate(0deg); }
+        100% { transform:translateY(0) rotate(-4deg); }
+    }
+    @media (prefers-reduced-motion:reduce){ .duck-bob{ animation:none; } }
     .gbtn { display:inline-flex; align-items:center; gap:10px; padding:11px 18px; border:1px solid var(--line);
         border-radius:10px; background:#fff; color:#1f2733; text-decoration:none; font-weight:600; font-size:15px; }
     .gbtn:hover { background:#f8fafc; }
