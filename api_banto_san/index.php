@@ -986,6 +986,7 @@ function render_styles(): void { ?>
         border-radius:16px; padding:32px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.06); }
     .duck-hero { display:flex; justify-content:center; }
     .duck-hero .duck { filter:drop-shadow(0 4px 8px rgba(47,122,214,.25)); image-rendering:pixelated; }
+    .duck-hero img.duckimg { filter:drop-shadow(0 4px 8px rgba(47,122,214,.22)); height:auto; }
     .gbtn { display:inline-flex; align-items:center; gap:10px; padding:11px 18px; border:1px solid var(--line);
         border-radius:10px; background:#fff; color:#1f2733; text-decoration:none; font-weight:600; font-size:15px; }
     .gbtn:hover { background:#f8fafc; }
@@ -1037,7 +1038,7 @@ function render_login_page(): void
 <div class="wrap">
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
     <div class="login-box">
-        <div class="duck-hero"><?= duck_svg(9) ?></div>
+        <div class="duck-hero"><img class="duckimg" src="<?= h(app_base_url()) ?>/duck2.png" alt="" style="width:104px"></div>
         <h2 style="margin-top:0"><?= h(APP_NAME) ?></h2>
         <p class="muted">Googleアカウントでログインしてください。<br>パスワードは保持しません。</p>
         <?php if ($hasGoogle): ?>
@@ -2127,7 +2128,7 @@ if ($route === 'product'):
 
     <!-- プロダクト → プロジェクト箱 → URL ビュー -->
     <?php if (!$tree): ?>
-        <div class="empty"><div class="duck-hero" style="margin-bottom:10px"><?= duck_svg(7) ?></div>該当するデータがありません。<?= $editable ? '「＋ API を追加」または「スキャン」で取り込んでください。' : '' ?></div>
+        <div class="empty"><div class="duck-hero" style="margin-bottom:10px"><img class="duckimg" src="<?= h(app_base_url()) ?>/duck2.png" alt="" style="width:96px"></div>該当するデータがありません。<?= $editable ? '「＋ API を追加」または「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
     <p class="hint" style="margin:0 0 8px">展開：プロダクト → プロジェクト箱 → URL。URL/サイトの☑を選び、下で「箱へ移動」できます。</p>
     <?php if ($editable): ?>
