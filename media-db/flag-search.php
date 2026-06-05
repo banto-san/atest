@@ -117,6 +117,10 @@ require __DIR__ . '/layout_top.php';
                                     </li>
                                 </ul>
                             </div>
+                            <div v-else-if="client.searchedAt" class="text-xs text-gray-400 mt-1">
+                                他媒体は見つかりませんでした。
+                                <span v-if="client.searchNote" class="block mt-0.5">AIの回答: {{ client.searchNote }}</span>
+                            </div>
                         </li>
                     </ul>
                 </div>

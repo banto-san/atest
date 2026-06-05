@@ -133,6 +133,7 @@
         if (c) {
             c.foundMedia = data.foundMedia || [];
             c.searchedAt = data.searchedAt || '';
+            c.searchNote = data.note || '';
         }
         return data;
     }

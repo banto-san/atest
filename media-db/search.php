@@ -66,48 +66,68 @@ if ($name === '') {
     search_out(400, ['error' => 'no_name', 'message' => '会社名が空です。']);
 }
 
-// プロンプト（同一企業に絞ってURLを多く挙げてもらう）
-$prompt = "次の会社が掲載・登録されているウェブページ（公式サイト、ポータル/媒体サイト、SNS、口コミ、地図、求人サイトなど）を"
-        . "ウェブ検索で調べ、同じ会社だと確信できるページのURLをできるだけ多く挙げてください。\n"
+// プロンプト：必ずウェブ検索し、見つかったURLを本文にも列挙させる（取りこぼし防止）
+$prompt = "あなたは企業の掲載先を調べる調査アシスタントです。"
+        . "必ずウェブ検索ツールを使って、次の会社が掲載・登録されているウェブページ"
+        . "（公式サイト、ポータル/媒体サイト、SNS、口コミ、地図、求人サイト等）を調べてください。\n"
         . "会社名: {$name}\n住所: {$address}\n"
-        . "見つけた各ページは必ず出典(URL)付きで示してください。";
+        . "同じ会社だと確信できるページについて、見つかったURLを本文に1行ずつ、"
+        . "短縮せず完全な形（https://… ）で列挙してください。出典(引用)も付けてください。";
 
-$payload = json_encode([
-    'model' => $model,
-    'tools' => [['type' => 'web_search_preview']],
-    'input' => $prompt,
-], JSON_UNESCAPED_UNICODE);
+// OpenAI Responses API 呼び出し（まず検索を強制。弾かれたら強制なしで再試行）
+$callOpenAI = function (bool $force) use ($apiKey, $model, $prompt): array {
+    $body = [
+        'model' => $model,
+        'tools' => [['type' => 'web_search_preview']],
+        'input' => $prompt,
+    ];
+    if ($force) {
+        $body['tool_choice'] = ['type' => 'web_search_preview'];
+    }
+    $ch = curl_init('https://api.openai.com/v1/responses');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode($body, JSON_UNESCAPED_UNICODE),
+        CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $apiKey, 'Content-Type: application/json'],
+        CURLOPT_TIMEOUT        => 90,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    return ['status' => $code, 'body' => $resp === false ? '' : (string) $resp, 'error' => $resp === false ? $err : ''];
+};
 
-// OpenAI Responses API 呼び出し
-$ch = curl_init('https://api.openai.com/v1/responses');
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_POST           => true,
-    CURLOPT_POSTFIELDS     => $payload,
-    CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $apiKey, 'Content-Type: application/json'],
-    CURLOPT_TIMEOUT        => 90,
-    CURLOPT_SSL_VERIFYPEER => true,
-]);
-$resp = curl_exec($ch);
-$httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$curlErr  = curl_error($ch);
-curl_close($ch);
-
-if ($resp === false) {
-    search_out(502, ['error' => 'connect_failed', 'message' => '検索APIに接続できませんでした：' . $curlErr]);
+$r = $callOpenAI(true);
+if ($r['status'] !== 200) {
+    $r2 = $callOpenAI(false);   // tool_choice等で弾かれたら強制なしで再試行
+    if ($r2['status'] === 200) {
+        $r = $r2;
+    }
 }
-$json = json_decode($resp, true);
-if ($httpCode !== 200) {
-    $msg = $json['error']['message'] ?? ('HTTP ' . $httpCode);
+
+if ($r['status'] === 0 || $r['body'] === '') {
+    search_out(502, ['error' => 'connect_failed', 'message' => '検索APIに接続できませんでした：' . $r['error']]);
+}
+$json = json_decode($r['body'], true);
+if ($r['status'] !== 200) {
+    $msg = $json['error']['message'] ?? ('HTTP ' . $r['status']);
     search_out(502, ['error' => 'api_error', 'message' => '検索APIエラー：' . $msg]);
 }
 
-// 応答からURLを収集（'url'キーを再帰収集 ＋ テキスト中のURLも抽出）
-$found = extract_found_media($json);
+// 応答からURL収集 ＋ AIの本文（0件時の原因確認用）
+$found  = extract_found_media($json);
+$aiText = extract_text($json);
 
-// 保存
 $client['foundMedia'] = $found;
 $client['searchedAt'] = date('Y-m-d H:i');
+if (count($found) === 0) {
+    $client['searchNote'] = mb_substr(trim($aiText), 0, 300);   // 0件のときAIの返答を残す
+} else {
+    unset($client['searchNote']);
+}
 $data['clients'][$idx] = $client;
 save_data($data);
 
@@ -116,6 +136,7 @@ search_out(200, [
     'count'      => count($found),
     'foundMedia' => $found,
     'searchedAt' => $client['searchedAt'],
+    'note'       => $client['searchNote'] ?? '',
 ]);
 
 /**
@@ -168,3 +189,43 @@ function extract_found_media($node): array
     }
     return $found;
 }
+
+/** APIレスポンスからAIの本文テキストを取り出す（0件時の原因確認・表示用） */
+function extract_text($node): string
+{
+    $out = [];
+    // まず output_text の text を集める
+    $walk = function ($n) use (&$walk, &$out) {
+        if (!is_array($n)) {
+            return;
+        }
+        if (($n['type'] ?? '') === 'output_text' && isset($n['text']) && is_string($n['text'])) {
+            $out[] = $n['text'];
+        }
+        foreach ($n as $v) {
+            if (is_array($v)) {
+                $walk($v);
+            }
+        }
+    };
+    $walk($node);
+    // 取れなければ 'text' キーをかき集める
+    if (!$out) {
+        $walk2 = function ($n) use (&$walk2, &$out) {
+            if (!is_array($n)) {
+                return;
+            }
+            if (isset($n['text']) && is_string($n['text'])) {
+                $out[] = $n['text'];
+            }
+            foreach ($n as $v) {
+                if (is_array($v)) {
+                    $walk2($v);
+                }
+            }
+        };
+        $walk2($node);
+    }
+    return trim(implode("\n", array_values(array_unique($out))));
+}
+
