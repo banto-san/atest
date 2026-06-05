@@ -379,6 +379,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'delete_product') {
+        require_role_at_least($gid, 'admin');
+        $prod = (string) ($_POST['product'] ?? '');
+        if ($prod === '' || $prod === '（プロダクト未指定）') {
+            flash('err', 'このプロダクトは削除できません。');
+            redirect_self();
+        }
+        try {
+            $r = delete_product($gid, $prod);
+            flash('ok', sprintf('プロダクト「%s」を削除しました（API %d件・箱 %d件）。他プロダクトのキーを含むURLは未割当に戻しました。', $prod, $r['apis'], $r['boxes']));
+        } catch (Throwable $e) {
+            flash('err', 'プロダクトの削除に失敗: ' . $e->getMessage());
+        }
+        // 削除後は対象プロダクトが無くなるためダッシュボードへ
+        header('Location: ' . app_url());
+        exit;
+    }
+
     if ($action === 'save_credential') {
         require_role_at_least($gid, 'member');
         $cidIn = isset($_POST['credential_id']) && $_POST['credential_id'] !== '' ? (int) $_POST['credential_id'] : null;
@@ -2007,6 +2025,9 @@ if ($route === 'product'):
             <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($pname) ?>」配下の箱のコストを今すぐ取得します。よろしいですか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_product"><input type="hidden" name="product" value="<?= h($pname) ?>"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト更新</button></form>
             <button type="button" class="btn" onclick="openProject({product: <?= htmlspecialchars(json_encode($pname, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>})"><?= icon('plus', 15) ?> 箱を追加</button>
             <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
+            <?php if (can_manage()): ?>
+            <form method="post" style="display:inline" onsubmit="return confirm('プロダクト「<?= h($pname) ?>」を丸ごと削除します。\n配下の箱・このプロダクトのAPI/URL登録・コスト履歴・追加クレジットも削除されます。\n（他プロダクトのキーを含むURLは未割当に戻ります）\n\n本当に削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_product"><input type="hidden" name="product" value="<?= h($pname) ?>"><button type="submit" class="btn" style="color:#b42318;border-color:#f0c4bd"><?= icon('trash', 15) ?> プロダクト削除</button></form>
+            <?php endif; ?>
         <?php endif; ?>
     </div>
 

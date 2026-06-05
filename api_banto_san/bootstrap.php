@@ -1069,6 +1069,52 @@ function delete_credential(int $gid, int $id): void
     db()->prepare('DELETE FROM credentials WHERE id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
 }
 
+/**
+ * プロダクトを丸ごと削除する。配下の箱・このプロダクト名のAPI（とURL）・
+ * メタ(catalog_pref)・コスト履歴(cost_snapshots)・追加クレジット(credit_purchases)をまとめて消す。
+ * 箱の中にあった「別プロダクト由来のURL」は削除せず未割当（project_id=NULL）に戻す。
+ * 戻り値: ['apis'=>削除API数, 'boxes'=>削除箱数]
+ */
+function delete_product(int $gid, string $name): array
+{
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // 配下の箱ID
+        $st = $pdo->prepare('SELECT id FROM projects WHERE group_id = :g AND product = :n');
+        $st->execute([':g' => $gid, ':n' => $name]);
+        $boxIds = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+
+        // 箱の中のURLは一旦すべて未割当へ（別プロダクトのキーを巻き込み削除しないため）
+        if ($boxIds) {
+            $in = implode(',', array_fill(0, count($boxIds), '?'));
+            $pdo->prepare("UPDATE usages SET project_id = NULL WHERE project_id IN ($in) AND api_id IN (SELECT id FROM apis WHERE group_id = ?)")
+                ->execute(array_merge($boxIds, [$gid]));
+        }
+
+        // このプロダクト名のAPIを削除（usages は ON DELETE CASCADE で消える）
+        $delApi = $pdo->prepare('DELETE FROM apis WHERE group_id = :g AND name = :n');
+        $delApi->execute([':g' => $gid, ':n' => $name]);
+        $nApi = $delApi->rowCount();
+
+        // 箱を削除
+        $delBox = $pdo->prepare('DELETE FROM projects WHERE group_id = :g AND product = :n');
+        $delBox->execute([':g' => $gid, ':n' => $name]);
+        $nBox = $delBox->rowCount();
+
+        // メタ・履歴・クレジットを掃除
+        $pdo->prepare('DELETE FROM catalog_pref WHERE group_id = :g AND name = :n')->execute([':g' => $gid, ':n' => $name]);
+        $pdo->prepare('DELETE FROM cost_snapshots WHERE group_id = :g AND product = :n')->execute([':g' => $gid, ':n' => $name]);
+        $pdo->prepare('DELETE FROM credit_purchases WHERE group_id = :g AND product = :n')->execute([':g' => $gid, ':n' => $name]);
+
+        $pdo->commit();
+        return ['apis' => $nApi, 'boxes' => $nBox];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        throw $e;
+    }
+}
+
 /* ------------------------------------------------------------------ *
  *  アカウント（ID・パスワード）管理。パスワードは暗号化保存。
  * ------------------------------------------------------------------ */
