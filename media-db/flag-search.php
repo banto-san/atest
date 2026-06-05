@@ -33,14 +33,10 @@ require __DIR__ . '/layout_top.php';
         </div>
 
         <div v-else class="space-y-6">
-            <!-- ドメイン重複ランキングは seo-hearing で確認 -->
+            <!-- ドメイン重複ランキング（このサイトで集計：準備中） -->
             <div class="border border-purple-200 rounded-xl bg-purple-50 p-6 text-center">
-                <p class="text-gray-700 font-medium mb-1">「{{ selectedMediaName }}」の<b>ドメイン重複ランキング</b>は seo-hearing で確認できます</p>
-                <p class="text-xs text-gray-500 mb-4">このリスト元の顧客が、他によく利用している媒体ドメインの集計です。</p>
-                <a :href="seoHearingRanking" target="_blank" rel="noopener"
-                   class="inline-flex items-center gap-2 bg-purple-600 text-white font-medium px-4 py-2 rounded-lg hover:bg-purple-700 shadow-sm">
-                    <i data-lucide="external-link" class="w-4 h-4"></i> seo-hearingで重複ランキングを見る
-                </a>
+                <p class="text-gray-700 font-medium mb-1">「{{ selectedMediaName }}」の<b>ドメイン重複ランキング</b>（準備中）</p>
+                <p class="text-xs text-gray-500">このリスト元の顧客を「他媒体検索」した結果がたまると、よく併用されている媒体ドメインを多い順で表示します。（検索API接続後に有効になります）</p>
             </div>
 
             <!-- 該当顧客リスト -->
@@ -58,10 +54,10 @@ require __DIR__ . '/layout_top.php';
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{{ client.industry }}</span>
                                 <span v-if="client.address" class="text-xs bg-gray-50 text-gray-500 px-2 py-0.5 rounded border">{{ client.address }}</span>
-                                <a :href="seoHearingSearch(client)" target="_blank" rel="noopener"
+                                <button @click="searchOtherMedia(client)"
                                    class="inline-flex items-center gap-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded px-2 py-1 ml-auto">
-                                    <i data-lucide="search" class="w-3 h-3"></i> seo-hearingで他媒体を調べる
-                                </a>
+                                    <i data-lucide="search" class="w-3 h-3"></i> 他媒体を調べる
+                                </button>
                             </div>
                         </li>
                     </ul>

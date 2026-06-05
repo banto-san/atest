@@ -50,9 +50,10 @@
             // 受注リスト元（獲得元の媒体）
             const sourceMedia = (client) => store.media.find(m => m.id === client.sourceMediaId) || null;
 
-            // seo-hearing 連携リンク（会社名＋住所で検索 / 重複ランキング画面）
-            const seoHearingSearch = (client) => AppCore.seoHearing.searchUrl(client.name, client.address);
-            const seoHearingRanking = AppCore.seoHearing.rankingUrl();
+            // 他媒体検索（このサイト自身で検索する仕組みは検索API接続後に有効化）
+            const searchOtherMedia = (client) => {
+                alert('他媒体の検索機能は準備中です（検索API接続後に有効になります）。');
+            };
 
             const exportCsv = () => {
                 const label = (dateRangeText.value || '全期間').replace(/ /g, '');
@@ -67,8 +68,7 @@
                 store,
                 filterStartDate, filterEndDate, resetDateFilter,
                 filteredClientsByDate, dateRangeText,
-                deleteClient, exportCsv, sourceMedia,
-                seoHearingSearch, seoHearingRanking,
+                deleteClient, exportCsv, sourceMedia, searchOtherMedia,
             };
         }
     }).mount('#app');

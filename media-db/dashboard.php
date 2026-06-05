@@ -65,19 +65,18 @@ require __DIR__ . '/layout_top.php';
                         </div>
 
                         <div class="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
-                            <a :href="seoHearingSearch(client)" target="_blank" rel="noopener"
-                               class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 shadow-sm"
-                               :title="client.name + '（' + (client.address || '住所未登録') + '）を seo-hearing で検索'">
-                                <i data-lucide="search" class="w-4 h-4"></i> seo-hearingで他媒体を調べる
-                            </a>
-                            <span v-if="!client.address" class="text-[11px] text-amber-600">※住所が未登録だと検索精度が下がります</span>
+                            <button @click="searchOtherMedia(client)"
+                                    class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 shadow-sm">
+                                <i data-lucide="search" class="w-4 h-4"></i> 他媒体を調べる
+                            </button>
+                            <span class="text-[11px] text-gray-400">（このサイトで検索：検索API接続後に有効）</span>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 併用媒体（ドメイン）ランキング → seo-hearing で確認 -->
+        <!-- 併用媒体（ドメイン）ランキング（このサイトで集計：準備中） -->
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-[600px]">
             <div class="flex justify-between items-center mb-4 border-b pb-2">
                 <h3 class="text-lg font-bold flex items-center text-gray-800">
@@ -87,13 +86,9 @@ require __DIR__ . '/layout_top.php';
             </div>
 
             <div class="flex-1 overflow-y-auto pr-2 flex flex-col items-center justify-center text-center p-6">
-                <i data-lucide="bar-chart-3" class="w-12 h-12 text-purple-300 mb-3"></i>
-                <p class="text-gray-700 mb-1 font-medium">ドメイン重複ランキングは seo-hearing で確認できます</p>
-                <p class="text-xs text-gray-400 mb-5">リスト元ごとに、よく併用されている媒体ドメインを集計した一覧です。</p>
-                <a :href="seoHearingRanking" target="_blank" rel="noopener"
-                   class="inline-flex items-center gap-2 bg-purple-600 text-white font-medium px-4 py-2 rounded-lg hover:bg-purple-700 shadow-sm">
-                    <i data-lucide="external-link" class="w-4 h-4"></i> seo-hearingで重複ランキングを見る
-                </a>
+                <i data-lucide="bar-chart-3" class="w-12 h-12 text-purple-200 mb-3"></i>
+                <p class="text-gray-700 mb-1 font-medium">ドメイン重複ランキング（準備中）</p>
+                <p class="text-xs text-gray-400">各受注客を「他媒体検索」した結果がたまると、ここに<br>よく併用されている媒体ドメインを多い順で表示します。<br>（検索API接続後に有効になります）</p>
             </div>
         </div>
     </div>

@@ -2,8 +2,7 @@
  * フラグ(媒体)別 逆引き検索 ページ
  * --------------------------------------------------------------------------
  * リスト元（受注の獲得元媒体）を1つ選ぶと、そのリスト元から受注した顧客を一覧表示。
- * 各顧客は seo-hearing で「他に利用している媒体」を検索でき、
- * ドメイン重複ランキングは seo-hearing の画面で確認する。
+ * 各顧客は「他媒体を調べる」で検索でき、ドメイン重複ランキングも将来このサイトで集計する。
  */
 (function () {
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
@@ -30,9 +29,10 @@
                 return store.clients.filter(c => c.sourceMediaId === selectedMediaId.value);
             });
 
-            // seo-hearing 連携リンク
-            const seoHearingSearch = (client) => AppCore.seoHearing.searchUrl(client.name, client.address);
-            const seoHearingRanking = AppCore.seoHearing.rankingUrl();
+            // 他媒体検索（このサイト自身で検索する仕組みは検索API接続後に有効化）
+            const searchOtherMedia = (client) => {
+                alert('他媒体の検索機能は準備中です（検索API接続後に有効になります）。');
+            };
 
             const exportCsv = () => {
                 if (!selectedMediaId.value) {
@@ -48,7 +48,7 @@
             return {
                 store, sourceMediaList,
                 selectedMediaId, selectedMediaName, filteredClientsByFlag,
-                seoHearingSearch, seoHearingRanking, exportCsv,
+                searchOtherMedia, exportCsv,
             };
         }
     }).mount('#app');
