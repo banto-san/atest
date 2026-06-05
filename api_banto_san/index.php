@@ -1565,6 +1565,7 @@ if ($route === 'accounts'):
             <?php foreach ($byCat as $cat => $rows): ?>
                 <button type="button" class="noren-tab" data-cat="<?= h($cat) ?>" onclick="acctTab(<?= htmlspecialchars(json_encode($cat, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>, this)"><?= h($cat) ?><span class="nt-n"><?= count($rows) ?></span></button>
             <?php endforeach; ?>
+            <input type="search" id="acctSearch" oninput="acctFilter()" placeholder="🔍 サービス・ID・メモで検索" style="margin-left:auto;min-width:210px;border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px">
         </div>
     <?php foreach ($byCat as $cat => $rows): ?>
         <div class="panel acct-cat" data-cat="<?= h($cat) ?>" style="margin-bottom:16px">
@@ -1629,10 +1630,34 @@ if ($route === 'accounts'):
     const ACC_CSRF = '<?= h($csrf) ?>';
     const pwShown = {};
     function acctTab(cat, btn) {
+        const s = document.getElementById('acctSearch'); if (s) { s.value = ''; }
+        document.querySelectorAll('.acct-cat tbody tr').forEach(r => { r.style.display = ''; });
         document.querySelectorAll('.noren-tab').forEach(t => t.classList.remove('active'));
         if (btn) btn.classList.add('active');
         document.querySelectorAll('.acct-cat').forEach(p => {
             p.style.display = (cat === '__all' || p.getAttribute('data-cat') === cat) ? '' : 'none';
+        });
+    }
+    // タブ横の検索：サービス名・ID・メモ等で全カテゴリ横断フィルタ。空ならアクティブタブに戻す。
+    function acctFilter() {
+        const box = document.getElementById('acctSearch');
+        const q = (box ? box.value : '').trim().toLowerCase();
+        const panels = document.querySelectorAll('.acct-cat');
+        if (q === '') {
+            const active = document.querySelector('.noren-tab.active');
+            const cat = active ? active.getAttribute('data-cat') : '__all';
+            document.querySelectorAll('.acct-cat tbody tr').forEach(r => { r.style.display = ''; });
+            panels.forEach(p => { p.style.display = (cat === '__all' || p.getAttribute('data-cat') === cat) ? '' : 'none'; });
+            return;
+        }
+        panels.forEach(p => {
+            let any = false;
+            p.querySelectorAll('tbody tr').forEach(r => {
+                const hit = r.textContent.toLowerCase().indexOf(q) !== -1;
+                r.style.display = hit ? '' : 'none';
+                if (hit) { any = true; }
+            });
+            p.style.display = any ? '' : 'none';
         });
     }
     function openAccount(a) {
@@ -1715,6 +1740,7 @@ if ($route === 'myaccounts'):
             <?php foreach ($byCat as $cat => $rows): ?>
                 <button type="button" class="noren-tab" data-cat="<?= h($cat) ?>" onclick="acctTab(<?= htmlspecialchars(json_encode($cat, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>, this)"><?= h($cat) ?><span class="nt-n"><?= count($rows) ?></span></button>
             <?php endforeach; ?>
+            <input type="search" id="acctSearch" oninput="acctFilter()" placeholder="🔍 サービス・ID・メモで検索" style="margin-left:auto;min-width:210px;border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px">
         </div>
     <?php foreach ($byCat as $cat => $rows): ?>
         <div class="panel acct-cat" data-cat="<?= h($cat) ?>" style="margin-bottom:16px">
@@ -1779,10 +1805,34 @@ if ($route === 'myaccounts'):
     const ACC_CSRF = '<?= h($csrf) ?>';
     const pwShown = {};
     function acctTab(cat, btn) {
+        const s = document.getElementById('acctSearch'); if (s) { s.value = ''; }
+        document.querySelectorAll('.acct-cat tbody tr').forEach(r => { r.style.display = ''; });
         document.querySelectorAll('.noren-tab').forEach(t => t.classList.remove('active'));
         if (btn) btn.classList.add('active');
         document.querySelectorAll('.acct-cat').forEach(p => {
             p.style.display = (cat === '__all' || p.getAttribute('data-cat') === cat) ? '' : 'none';
+        });
+    }
+    // タブ横の検索：サービス名・ID・メモ等で全カテゴリ横断フィルタ。空ならアクティブタブに戻す。
+    function acctFilter() {
+        const box = document.getElementById('acctSearch');
+        const q = (box ? box.value : '').trim().toLowerCase();
+        const panels = document.querySelectorAll('.acct-cat');
+        if (q === '') {
+            const active = document.querySelector('.noren-tab.active');
+            const cat = active ? active.getAttribute('data-cat') : '__all';
+            document.querySelectorAll('.acct-cat tbody tr').forEach(r => { r.style.display = ''; });
+            panels.forEach(p => { p.style.display = (cat === '__all' || p.getAttribute('data-cat') === cat) ? '' : 'none'; });
+            return;
+        }
+        panels.forEach(p => {
+            let any = false;
+            p.querySelectorAll('tbody tr').forEach(r => {
+                const hit = r.textContent.toLowerCase().indexOf(q) !== -1;
+                r.style.display = hit ? '' : 'none';
+                if (hit) { any = true; }
+            });
+            p.style.display = any ? '' : 'none';
         });
     }
     function openAccount(a) {
