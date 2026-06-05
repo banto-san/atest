@@ -522,6 +522,23 @@ function render_styles(): void { ?>
     .modal-head { padding:16px 20px; border-bottom:1px solid var(--line); font-weight:700; }
     .modal-body { padding:16px 20px; }
     .modal-foot { padding:14px 20px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; }
+    /* 共通モーダル（abtConfirm/abtPrompt/abtAlert）の銭湯テイスト ── #__abtModal 限定 */
+    #__abtModal { width:min(440px,92vw); border:none; border-top:6px solid var(--gold);
+        border-radius:16px; padding:0; overflow:hidden; box-shadow:0 24px 70px rgba(31,58,138,.35);
+        animation:abtpop .18s ease-out; }
+    #__abtModal::backdrop { background:rgba(31,58,138,.4); backdrop-filter:blur(2px); }
+    @keyframes abtpop { from { transform:translateY(10px) scale(.96); opacity:0; } to { transform:none; opacity:1; } }
+    #__abtModal .abt-head { display:flex; align-items:center; gap:11px; padding:16px 20px;
+        font-weight:800; font-size:15px; color:var(--ink); border-bottom:1px solid var(--line);
+        background:linear-gradient(180deg,#eef5fc,#fff); }
+    #__abtModal .abt-ic { width:32px; height:32px; flex:none; display:inline-flex; align-items:center;
+        justify-content:center; border-radius:50%; background:var(--accent); color:#fff;
+        box-shadow:0 0 0 3px rgba(245,184,30,.5); }
+    #__abtModal .modal-body { padding:18px 20px; color:var(--ink); }
+    #__abtModal .modal-foot { padding:14px 20px; background:#fafcff; }
+    #__abtModal .modal-foot button { min-width:88px; font-weight:700; }
+    #__abtModal .modal-foot button.danger { background:#b42318; color:#fff; border-color:transparent; }
+    #__abtModal .modal-body input[type=text] { border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
     .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .grid .full { grid-column:1 / -1; }
     .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
@@ -582,11 +599,11 @@ function render_styles(): void { ?>
         var dlg = document.createElement('dialog');
         dlg.id = '__abtModal';
         dlg.style.maxWidth = '440px';
+        var steam = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 13c-1.6-1.4-1.6-3 0-4.4S8.6 5 7 3.6"/><path d="M12 13c-1.6-1.4-1.6-3 0-4.4S13.6 5 12 3.6"/><path d="M17 13c-1.6-1.4-1.6-3 0-4.4S18.6 5 17 3.6"/><path d="M4 17.5h16"/><path d="M5 20.5h14"/></svg>';
         dlg.innerHTML =
-            '<div class="modal-head" data-h>確認</div>' +
+            '<div class="abt-head"><span class="abt-ic">' + steam + '</span><span data-h>確認</span></div>' +
             '<div class="modal-body"><div data-msg style="white-space:pre-wrap;line-height:1.6"></div>' +
-            '<input type="text" data-inp style="display:none;margin-top:12px;width:100%">' +
-            '<datalist data-list></datalist></div>' +
+            '<input type="text" data-inp style="display:none;margin-top:12px;width:100%"></div>' +
             '<div class="modal-foot"><button type="button" data-cancel>キャンセル</button>' +
             '<button type="button" class="primary" data-ok>OK</button></div>';
         document.body.appendChild(dlg);
@@ -611,7 +628,9 @@ function render_styles(): void { ?>
     }
     window.abtConfirm = function (message, onOk, opts) {
         opts = opts || {};
-        modal({ message: message, onOk: onOk, title: opts.title || '確認', okText: opts.okText, danger: opts.danger !== false });
+        // 削除・失効など破壊的な操作は OK ボタンを赤に（明示指定があればそれを優先）
+        var danger = (opts.danger !== undefined) ? opts.danger : /削除|失効|取り消/.test(message || '');
+        modal({ message: message, onOk: onOk, title: opts.title || '確認', okText: opts.okText, danger: danger });
     };
     window.abtPrompt = function (message, def, onOk, opts) {
         opts = opts || {};
