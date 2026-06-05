@@ -349,6 +349,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'add_subscription') {
+        require_role_at_least($gid, 'member');
+        $prod = trim((string) ($_POST['product'] ?? ''));
+        $plan = trim((string) ($_POST['plan'] ?? ''));
+        $amtRaw = trim((string) ($_POST['amount'] ?? ''));
+        $cur = trim((string) ($_POST['currency'] ?? 'JPY')) ?: 'JPY';
+        if ($prod === '' || $amtRaw === '') { flash('err', 'プロダクト名と月額は必須です。'); redirect_self(); }
+        $amt = (float) $amtRaw;
+        if ($amt <= 0) { flash('err', '月額は0より大きい数値を入力してください。'); redirect_self(); }
+        $boxName = $plan !== '' ? $plan : ($prod . ' 月額');
+        $pdo->prepare("INSERT INTO projects (group_id, name, product, monthly_cost, currency, cost_type, created_at, updated_at) VALUES (:g,:n,:p,:m,:c,'',:t,:t)")
+            ->execute([':g' => $gid, ':n' => $boxName, ':p' => $prod, ':m' => $amt, ':c' => $cur, ':t' => now()]);
+        flash('ok', sprintf('月額サブスク「%s」を登録しました（%s %s/月）。', $prod, $cur, number_format($amt)));
+        redirect_self();
+    }
+
     if ($action === 'save_project') {
         require_role_at_least($gid, 'member');
         $pidIn = isset($_POST['project_id']) && $_POST['project_id'] !== '' ? (int) $_POST['project_id'] : null;
@@ -1366,6 +1382,28 @@ function render_modals(string $csrf, array $names, array $credentials): void
     </form>
 </dialog>
 
+<!-- 月額サブスク（APIキー不要の固定費）登録モーダル -->
+<dialog id="subDialog">
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="add_subscription">
+        <div class="modal-head">月額サブスクを登録</div>
+        <div class="modal-body">
+            <p class="hint" style="margin:0 0 10px">APIキー不要の固定費（例：LINE公式アカウント、サーバー月額など）を登録します。月額合計・プロダクト別にそのまま反映されます。</p>
+            <div class="grid">
+                <div class="field full"><label>プロダクト名 <span style="color:#b42318">*</span></label><input name="product" id="sub_product" list="productList" required placeholder="例: LINE公式アカウント"></div>
+                <div class="field full"><label>プラン名・メモ（任意）</label><input name="plan" id="sub_plan" placeholder="例: 認証済みアカウント スタンダード"></div>
+                <div class="field"><label>月額 <span style="color:#b42318">*</span></label><input name="amount" id="sub_amount" type="number" step="0.01" min="0" required placeholder="例: 5000"></div>
+                <div class="field"><label>通貨</label><select name="currency" id="sub_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('subDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">登録</button>
+        </div>
+    </form>
+</dialog>
+
 <!-- コスト取得キー（クレデンシャル）編集モーダル -->
 <dialog id="credDialog">
     <form method="post">
@@ -1481,6 +1519,15 @@ function render_modals(string $csrf, array $names, array $credentials): void
         document.getElementById('f_secret_clear').checked = false;
         document.getElementById('f_secret_state').textContent = '';
         dialog.showModal();
+    }
+    function openSub() {
+        const d = document.getElementById('subDialog');
+        if (!d) { return; }
+        document.getElementById('sub_product').value = '';
+        document.getElementById('sub_plan').value = '';
+        document.getElementById('sub_amount').value = '';
+        document.getElementById('sub_currency').value = 'JPY';
+        d.showModal();
     }
     function openEdit(a) {
         document.getElementById('modalTitle').textContent = 'API を編集';
@@ -2510,6 +2557,7 @@ if ($route === 'product'):
         <span class="grow"></span>
         <?php if ($editable): ?>
             <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '全プロジェクト箱のコストを今すぐ取得します。よろしいですか？（数が多いと少し時間がかかります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_costs"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト一括更新</button></form>
+            <button type="button" class="btn" onclick="openSub()"><?= icon('plus', 15) ?> 月額サブスク</button>
             <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
         <?php endif; ?>
         <?php if (count($memberships) > 1): ?>
