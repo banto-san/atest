@@ -926,6 +926,8 @@ function db(): PDO
             secret_fp   TEXT,
             url         TEXT    NOT NULL DEFAULT '',
             notes       TEXT    NOT NULL DEFAULT '',
+            logo_color  TEXT,
+            logo_url    TEXT,
             updated_by  TEXT    NOT NULL DEFAULT '',
             created_at  TEXT    NOT NULL,
             updated_at  TEXT    NOT NULL
@@ -1036,6 +1038,12 @@ function db(): PDO
     $acctCols = array_column($pdo->query('PRAGMA table_info(accounts)')->fetchAll(), 'name');
     if (!in_array('owner_email', $acctCols, true)) {
         $pdo->exec("ALTER TABLE accounts ADD COLUMN owner_email TEXT NOT NULL DEFAULT ''");
+    }
+    // accounts にアイコンの見た目（背景色・画像URL）を後付け。
+    foreach (['logo_color' => 'TEXT', 'logo_url' => 'TEXT'] as $col => $type) {
+        if (!in_array($col, $acctCols, true)) {
+            $pdo->exec("ALTER TABLE accounts ADD COLUMN $col $type");
+        }
     }
 
     // 既存 cost_project → projects 箱へ自動移行（projects が空のときだけ）
@@ -1255,7 +1263,7 @@ function rename_site(int $gid, string $old, string $new): int
 function list_accounts(int $gid): array
 {
     // 共有アカウントのみ（owner_email='' = グループ共有。個人用は別関数で扱う）
-    $st = db()->prepare("SELECT id, category, service, login_id, secret_hint, url, notes, updated_by, updated_at FROM accounts WHERE group_id = :g AND owner_email = '' ORDER BY category, service");
+    $st = db()->prepare("SELECT id, category, service, login_id, secret_hint, url, notes, logo_color, logo_url, updated_by, updated_at FROM accounts WHERE group_id = :g AND owner_email = '' ORDER BY category, service");
     $st->execute([':g' => $gid]);
     return $st->fetchAll();
 }
@@ -1279,7 +1287,7 @@ function account_categories(int $gid): array
 
 function list_my_accounts(string $owner): array
 {
-    $st = db()->prepare("SELECT id, category, service, login_id, secret_hint, url, notes, updated_at FROM accounts WHERE owner_email = :o AND owner_email <> '' ORDER BY category, service");
+    $st = db()->prepare("SELECT id, category, service, login_id, secret_hint, url, notes, logo_color, logo_url, updated_at FROM accounts WHERE owner_email = :o AND owner_email <> '' ORDER BY category, service");
     $st->execute([':o' => $owner]);
     return $st->fetchAll();
 }
@@ -1292,16 +1300,18 @@ function my_account_categories(string $owner): array
 }
 
 /** 個人用アカウントを作成/更新（本人のみ）。$password 空なら既存PWを保持。戻り値: id */
-function save_my_account(int $gid, string $owner, ?int $id, string $category, string $service, string $login, string $url, string $notes, string $password): int
+function save_my_account(int $gid, string $owner, ?int $id, string $category, string $service, string $login, string $url, string $notes, string $password, string $logoColor = '', string $logoUrl = ''): int
 {
     $now = now();
+    $lc = $logoColor !== '' ? $logoColor : null;
+    $lu = $logoUrl !== '' ? $logoUrl : null;
     if ($id === null) {
-        db()->prepare('INSERT INTO accounts (group_id, owner_email, category, service, login_id, url, notes, updated_by, created_at, updated_at) VALUES (:g,:o,:cat,:s,:l,:u,:n,:o,:c,:c)')
-            ->execute([':g' => $gid, ':o' => $owner, ':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':c' => $now]);
+        db()->prepare('INSERT INTO accounts (group_id, owner_email, category, service, login_id, url, notes, logo_color, logo_url, updated_by, created_at, updated_at) VALUES (:g,:o,:cat,:s,:l,:u,:n,:lc,:lu,:o,:c,:c)')
+            ->execute([':g' => $gid, ':o' => $owner, ':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':lc' => $lc, ':lu' => $lu, ':c' => $now]);
         $id = (int) db()->lastInsertId();
     } else {
-        db()->prepare("UPDATE accounts SET category=:cat, service=:s, login_id=:l, url=:u, notes=:n, updated_at=:t WHERE id=:id AND owner_email=:o AND owner_email <> ''")
-            ->execute([':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':t' => $now, ':id' => $id, ':o' => $owner]);
+        db()->prepare("UPDATE accounts SET category=:cat, service=:s, login_id=:l, url=:u, notes=:n, logo_color=:lc, logo_url=:lu, updated_at=:t WHERE id=:id AND owner_email=:o AND owner_email <> ''")
+            ->execute([':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':lc' => $lc, ':lu' => $lu, ':t' => $now, ':id' => $id, ':o' => $owner]);
     }
     if ($password !== '' && encryption_ready()) {
         db()->prepare("UPDATE accounts SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND owner_email=:o AND owner_email <> ''")
@@ -1326,16 +1336,18 @@ function reveal_my_account_password(string $owner, int $id): ?string
 }
 
 /** アカウントを作成/更新。$password 空なら既存PWを保持。戻り値: id */
-function save_account(int $gid, ?int $id, string $category, string $service, string $login, string $url, string $notes, string $password, string $by): int
+function save_account(int $gid, ?int $id, string $category, string $service, string $login, string $url, string $notes, string $password, string $by, string $logoColor = '', string $logoUrl = ''): int
 {
     $now = now();
+    $lc = $logoColor !== '' ? $logoColor : null;
+    $lu = $logoUrl !== '' ? $logoUrl : null;
     if ($id === null) {
-        db()->prepare('INSERT INTO accounts (group_id, category, service, login_id, url, notes, updated_by, created_at, updated_at) VALUES (:g,:cat,:s,:l,:u,:n,:by,:c,:c)')
-            ->execute([':g' => $gid, ':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':by' => $by, ':c' => $now]);
+        db()->prepare('INSERT INTO accounts (group_id, category, service, login_id, url, notes, logo_color, logo_url, updated_by, created_at, updated_at) VALUES (:g,:cat,:s,:l,:u,:n,:lc,:lu,:by,:c,:c)')
+            ->execute([':g' => $gid, ':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':lc' => $lc, ':lu' => $lu, ':by' => $by, ':c' => $now]);
         $id = (int) db()->lastInsertId();
     } else {
-        db()->prepare('UPDATE accounts SET category=:cat, service=:s, login_id=:l, url=:u, notes=:n, updated_by=:by, updated_at=:t WHERE id=:id AND group_id=:g')
-            ->execute([':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':by' => $by, ':t' => $now, ':id' => $id, ':g' => $gid]);
+        db()->prepare('UPDATE accounts SET category=:cat, service=:s, login_id=:l, url=:u, notes=:n, logo_color=:lc, logo_url=:lu, updated_by=:by, updated_at=:t WHERE id=:id AND group_id=:g')
+            ->execute([':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':lc' => $lc, ':lu' => $lu, ':by' => $by, ':t' => $now, ':id' => $id, ':g' => $gid]);
     }
     if ($password !== '' && encryption_ready()) {
         db()->prepare('UPDATE accounts SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND group_id=:g')

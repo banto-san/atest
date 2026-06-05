@@ -523,13 +523,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($svc === '') { flash('err', 'サービス名は必須です。'); redirect_self(); }
         $pw = (string) ($_POST['password'] ?? '');
         if ($pw !== '' && !encryption_ready()) { flash('err', 'APP_ENCRYPTION_KEY が未設定のため、パスワードを保存できません。'); redirect_self(); }
-        save_account(
+        [$lcolor, $lurl] = account_logo_inputs();
+        $aid = save_account(
             $gid, $aid,
             trim((string) ($_POST['category'] ?? '')), $svc,
             trim((string) ($_POST['login_id'] ?? '')), trim((string) ($_POST['url'] ?? '')),
             trim((string) ($_POST['notes'] ?? '')), $pw,
-            (string) ($user['email'] ?? '')
+            (string) ($user['email'] ?? ''), $lcolor, $lurl
         );
+        try {
+            $up = save_uploaded_logo($gid, 'acct#' . $aid);
+            if ($up !== null) { db()->prepare("UPDATE accounts SET logo_url=:u WHERE id=:id AND group_id=:g AND owner_email=''")->execute([':u' => $up, ':id' => $aid, ':g' => $gid]); }
+        } catch (Throwable $e) { flash('err', $e->getMessage()); redirect_self(); }
         flash('ok', 'アカウントを保存しました。');
         redirect_self();
     }
@@ -558,12 +563,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($svc === '') { flash('err', 'サービス名は必須です。'); redirect_self(); }
         $pw = (string) ($_POST['password'] ?? '');
         if ($pw !== '' && !encryption_ready()) { flash('err', 'APP_ENCRYPTION_KEY が未設定のため、パスワードを保存できません。'); redirect_self(); }
-        save_my_account(
+        [$lcolor, $lurl] = account_logo_inputs();
+        $aid = save_my_account(
             $gid, $me, $aid,
             trim((string) ($_POST['category'] ?? '')), $svc,
             trim((string) ($_POST['login_id'] ?? '')), trim((string) ($_POST['url'] ?? '')),
-            trim((string) ($_POST['notes'] ?? '')), $pw
+            trim((string) ($_POST['notes'] ?? '')), $pw, $lcolor, $lurl
         );
+        try {
+            $up = save_uploaded_logo($gid, 'acct#' . $aid);
+            if ($up !== null) { db()->prepare("UPDATE accounts SET logo_url=:u WHERE id=:id AND owner_email=:o")->execute([':u' => $up, ':id' => $aid, ':o' => $me]); }
+        } catch (Throwable $e) { flash('err', $e->getMessage()); redirect_self(); }
         flash('ok', '個人アカウントを保存しました。');
         redirect_self();
     }
@@ -995,6 +1005,16 @@ function is_key_def_usage(array $u): bool
     $base = strtolower(basename((string) $u['file']));
     if (strncmp($base, '.env', 4) === 0) { return true; }
     return (bool) preg_match('/\b[A-Z][A-Z0-9_]*(?:API_?KEY|SECRET|TOKEN|ACCESS_?KEY|_KEY)\b\s*[:=]/', (string) $u['snippet']);
+}
+
+/** アカウントのアイコン入力（背景色・画像URL）を検証して [color, url] を返す */
+function account_logo_inputs(): array
+{
+    $color = trim((string) ($_POST['logo_color'] ?? ''));
+    if ($color !== '' && !preg_match('/^#[0-9a-fA-F]{6}$/', $color)) { $color = ''; }
+    $url = trim((string) ($_POST['logo_url'] ?? ''));
+    if ($url !== '' && !preg_match('#^https?://#i', $url)) { $url = ''; }
+    return [$color, $url];
 }
 
 /** 共通スタイル */
@@ -1554,7 +1574,7 @@ if ($route === 'accounts'):
                 <tbody>
                 <?php foreach ($rows as $a): ?>
                     <tr>
-                        <td><span style="display:inline-flex;align-items:center;gap:8px"><?= provider_badge($a['service'], 26) ?> <span><strong><?= h($a['service']) ?></strong><?php if ($a['url'] !== ''): ?><br><a href="<?= h($a['url']) ?>" target="_blank" rel="noopener" class="product-link" style="font-size:12px"><?= icon('right', 12) ?> ログイン</a><?php endif; ?></span></span></td>
+                        <td><span style="display:inline-flex;align-items:center;gap:8px"><?= provider_badge($a['service'], 26, $a['logo_color'] ?? null, $a['logo_url'] ?? null) ?> <span><strong><?= h($a['service']) ?></strong><?php if ($a['url'] !== ''): ?><br><a href="<?= h($a['url']) ?>" target="_blank" rel="noopener" class="product-link" style="font-size:12px"><?= icon('right', 12) ?> ログイン</a><?php endif; ?></span></span></td>
                         <td><?php if ($a['login_id'] !== ''): ?><code><?= h($a['login_id']) ?></code> <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($a['login_id'], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 14) ?></button><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                         <td style="white-space:nowrap">
                             <?php if ($a['secret_hint']): ?>
@@ -1565,7 +1585,7 @@ if ($route === 'accounts'):
                         </td>
                         <td class="hide-sm note-cell"><?= nl2br(h($a['notes'])) ?: '<span class="muted">—</span>' ?></td>
                         <td style="white-space:nowrap">
-                            <button class="link" type="button" onclick='openAccount(<?= json_encode(["id"=>(int)$a["id"],"category"=>$a["category"],"service"=>$a["service"],"login_id"=>$a["login_id"],"url"=>$a["url"],"notes"=>$a["notes"],"secret_hint"=>$a["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                            <button class="link" type="button" onclick='openAccount(<?= json_encode(["id"=>(int)$a["id"],"category"=>$a["category"],"service"=>$a["service"],"login_id"=>$a["login_id"],"url"=>$a["url"],"notes"=>$a["notes"],"secret_hint"=>$a["secret_hint"],"logo_color"=>$a["logo_color"],"logo_url"=>$a["logo_url"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                             <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '「<?= h($a['service']) ?>」を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_account"><input type="hidden" name="account_id" value="<?= (int) $a['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 14) ?></button></form><?php endif; ?>
                         </td>
                     </tr>
@@ -1580,7 +1600,7 @@ if ($route === 'accounts'):
 </div>
 <div id="abtToast"></div>
 <dialog id="accountDialog">
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
         <input type="hidden" name="action" value="save_account">
         <input type="hidden" name="account_id" id="af_id" value="">
@@ -1593,6 +1613,9 @@ if ($route === 'accounts'):
                 <div class="field"><label>ログインURL</label><input name="url" id="af_url" type="url" placeholder="https://..."></div>
                 <div class="field full"><label><?= icon('lock', 15) ?> パスワード（暗号化保存）</label><input type="text" name="password" id="af_password" autocomplete="off" placeholder="空欄なら現状維持"><div class="hint" id="af_pw_state"></div></div>
                 <div class="field full"><label>メモ（2段階認証の連絡先など）</label><textarea name="notes" id="af_notes" rows="2"></textarea></div>
+                <div class="field"><label>アイコン背景色</label><input type="color" name="logo_color" id="af_logo_color" value="#ffffff" style="width:64px;height:40px;padding:2px"></div>
+                <div class="field"><label>アイコン画像をアップロード</label><input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></div>
+                <div class="field full"><label>または画像URL</label><input type="url" name="logo_url" id="af_logo_url" placeholder="https://.../icon.png"><div class="hint">画像が背景色より優先。空のURL＋ファイル無しで画像を解除（PNG/JPEG/GIF/WebP・2MBまで）。</div></div>
             </div>
         </div>
         <div class="modal-foot">
@@ -1623,6 +1646,9 @@ if ($route === 'accounts'):
         document.getElementById('af_notes').value = a.notes ?? '';
         document.getElementById('af_password').value = '';
         document.getElementById('af_pw_state').textContent = a.secret_hint ? ('現在: ' + a.secret_hint + '（変更時のみ入力）') : 'パスワード未設定';
+        document.getElementById('af_logo_color').value = a.logo_color || '#ffffff';
+        document.getElementById('af_logo_url').value = (a.logo_url || '').replace(/\?v=\d+$/, '');
+        const lf = accountDialog.querySelector('input[name=logo_file]'); if (lf) { lf.value = ''; }
         accountDialog.showModal();
     }
     function fetchPw(id) {
@@ -1698,7 +1724,7 @@ if ($route === 'myaccounts'):
                 <tbody>
                 <?php foreach ($rows as $a): ?>
                     <tr>
-                        <td><span style="display:inline-flex;align-items:center;gap:8px"><?= provider_badge($a['service'], 26) ?> <span><strong><?= h($a['service']) ?></strong><?php if ($a['url'] !== ''): ?><br><a href="<?= h($a['url']) ?>" target="_blank" rel="noopener" class="product-link" style="font-size:12px"><?= icon('right', 12) ?> ログイン</a><?php endif; ?></span></span></td>
+                        <td><span style="display:inline-flex;align-items:center;gap:8px"><?= provider_badge($a['service'], 26, $a['logo_color'] ?? null, $a['logo_url'] ?? null) ?> <span><strong><?= h($a['service']) ?></strong><?php if ($a['url'] !== ''): ?><br><a href="<?= h($a['url']) ?>" target="_blank" rel="noopener" class="product-link" style="font-size:12px"><?= icon('right', 12) ?> ログイン</a><?php endif; ?></span></span></td>
                         <td><?php if ($a['login_id'] !== ''): ?><code><?= h($a['login_id']) ?></code> <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($a['login_id'], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 14) ?></button><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                         <td style="white-space:nowrap">
                             <?php if ($a['secret_hint']): ?>
@@ -1709,7 +1735,7 @@ if ($route === 'myaccounts'):
                         </td>
                         <td class="hide-sm note-cell"><?= nl2br(h($a['notes'])) ?: '<span class="muted">—</span>' ?></td>
                         <td style="white-space:nowrap">
-                            <button class="link" type="button" onclick='openAccount(<?= json_encode(["id"=>(int)$a["id"],"category"=>$a["category"],"service"=>$a["service"],"login_id"=>$a["login_id"],"url"=>$a["url"],"notes"=>$a["notes"],"secret_hint"=>$a["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                            <button class="link" type="button" onclick='openAccount(<?= json_encode(["id"=>(int)$a["id"],"category"=>$a["category"],"service"=>$a["service"],"login_id"=>$a["login_id"],"url"=>$a["url"],"notes"=>$a["notes"],"secret_hint"=>$a["secret_hint"],"logo_color"=>$a["logo_color"],"logo_url"=>$a["logo_url"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                             <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '「<?= h($a['service']) ?>」を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_my_account"><input type="hidden" name="account_id" value="<?= (int) $a['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 14) ?></button></form>
                         </td>
                     </tr>
@@ -1724,7 +1750,7 @@ if ($route === 'myaccounts'):
 </div>
 <div id="abtToast"></div>
 <dialog id="accountDialog">
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
         <input type="hidden" name="action" value="save_my_account">
         <input type="hidden" name="account_id" id="af_id" value="">
@@ -1737,6 +1763,9 @@ if ($route === 'myaccounts'):
                 <div class="field"><label>ログインURL</label><input name="url" id="af_url" type="url" placeholder="https://..."></div>
                 <div class="field full"><label><?= icon('lock', 15) ?> パスワード（暗号化保存）</label><input type="text" name="password" id="af_password" autocomplete="off" placeholder="空欄なら現状維持"><div class="hint" id="af_pw_state"></div></div>
                 <div class="field full"><label>メモ（2段階認証の連絡先など）</label><textarea name="notes" id="af_notes" rows="2"></textarea></div>
+                <div class="field"><label>アイコン背景色</label><input type="color" name="logo_color" id="af_logo_color" value="#ffffff" style="width:64px;height:40px;padding:2px"></div>
+                <div class="field"><label>アイコン画像をアップロード</label><input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp"></div>
+                <div class="field full"><label>または画像URL</label><input type="url" name="logo_url" id="af_logo_url" placeholder="https://.../icon.png"><div class="hint">画像が背景色より優先。空のURL＋ファイル無しで画像を解除（PNG/JPEG/GIF/WebP・2MBまで）。</div></div>
             </div>
         </div>
         <div class="modal-foot">
@@ -1767,6 +1796,9 @@ if ($route === 'myaccounts'):
         document.getElementById('af_notes').value = a.notes ?? '';
         document.getElementById('af_password').value = '';
         document.getElementById('af_pw_state').textContent = a.secret_hint ? ('現在: ' + a.secret_hint + '（変更時のみ入力）') : 'パスワード未設定';
+        document.getElementById('af_logo_color').value = a.logo_color || '#ffffff';
+        document.getElementById('af_logo_url').value = (a.logo_url || '').replace(/\?v=\d+$/, '');
+        const lf = accountDialog.querySelector('input[name=logo_file]'); if (lf) { lf.value = ''; }
         accountDialog.showModal();
     }
     function fetchPw(id) {
