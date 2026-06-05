@@ -338,6 +338,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'rename_site') {
+        require_role_at_least($gid, 'member');
+        $old = trim((string) ($_POST['old_site'] ?? ''));
+        $new = trim((string) ($_POST['new_site'] ?? ''));
+        if ($old === '' || $new === '') { flash('err', 'サイト名を入力してください。'); redirect_self(); }
+        if ($old === $new) { redirect_self(); }
+        $n = rename_site($gid, $old, $new);
+        flash('ok', sprintf('サイト「%s」を「%s」に変更しました（%d件）。', $old, $new, $n));
+        redirect_self();
+    }
+
     if ($action === 'save_project') {
         require_role_at_least($gid, 'member');
         $pidIn = isset($_POST['project_id']) && $_POST['project_id'] !== '' ? (int) $_POST['project_id'] : null;
@@ -2249,7 +2260,7 @@ if ($route === 'product'):
                 <?php foreach ($bySite as $site => $sfiles): ?>
                 <tr class="box<?= $bi ?>-url site-row" style="display:none">
                     <td></td>
-                    <td style="padding-left:20px"><?= icon('globe', 15) ?> <strong><?= h($site) ?></strong></td>
+                    <td style="padding-left:20px"><?= icon('globe', 15) ?> <strong><?= h($site) ?></strong><?php if ($editable): ?> <button class="link" type="button" onclick='renameSite(<?= htmlspecialchars(json_encode($site, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)' title="サイト名を変更"><?= icon('gear', 13) ?></button><?php endif; ?></td>
                     <td class="muted"><?= count($sfiles) ?> ページ</td>
                     <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
                 </tr>
@@ -2279,7 +2290,7 @@ if ($route === 'product'):
                 <?php foreach ($uBySite as $site => $sfiles): ?>
                 <tr class="box<?= $bi ?>-url site-row" style="display:none">
                     <td></td>
-                    <td style="padding-left:20px"><?= icon('globe', 15) ?> <strong><?= h($site) ?></strong></td>
+                    <td style="padding-left:20px"><?= icon('globe', 15) ?> <strong><?= h($site) ?></strong><?php if ($editable): ?> <button class="link" type="button" onclick='renameSite(<?= htmlspecialchars(json_encode($site, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)' title="サイト名を変更"><?= icon('gear', 13) ?></button><?php endif; ?></td>
                     <td class="muted"><?= count($sfiles) ?> ページ</td>
                     <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
                 </tr>
@@ -2339,6 +2350,17 @@ if ($route === 'product'):
     }
     function openLogo() { const d = document.getElementById('logoDialog'); if (d) d.showModal(); }
     const DETAIL_CSRF = '<?= h($csrf) ?>';
+    function renameSite(oldName) {
+        let nv = prompt('サイト名を変更します。\n（このグループ全体で「' + oldName + '」をまとめて変更します）', oldName);
+        if (nv === null) { return; }
+        nv = nv.trim();
+        if (nv === '' || nv === oldName) { return; }
+        const f = document.createElement('form');
+        f.method = 'post';
+        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+        add('csrf', DETAIL_CSRF); add('action', 'rename_site'); add('old_site', oldName); add('new_site', nv);
+        document.body.appendChild(f); f.submit();
+    }
     function ddCountUpd() {
         const n = document.querySelectorAll('.dchk:checked').length;
         const el = document.getElementById('ddCount'); if (el) el.textContent = n ? (n + ' 件選択中') : '';
@@ -2672,7 +2694,7 @@ if ($route === 'product'):
                     ?>
                     <?php foreach ($bySite as $site => $sfiles): ?>
                         <div class="site-group">
-                            <div class="site-head"><span class="sc"><?= icon('globe', 15) ?></span> <strong><?= h($site) ?></strong> <span class="muted" style="font-weight:400">（<?= count($sfiles) ?> ページ）</span></div>
+                            <div class="site-head"><span class="sc"><?= icon('globe', 15) ?></span> <strong><?= h($site) ?></strong> <span class="muted" style="font-weight:400">（<?= count($sfiles) ?> ページ）</span><?php if ($editable): ?> <button class="link" type="button" onclick='renameSite(<?= htmlspecialchars(json_encode($site, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)' title="サイト名を変更"><?= icon('gear', 13) ?></button><?php endif; ?></div>
                             <?php foreach ($sfiles as $f):
                                 $pathStr = $site . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : '');
                             ?>
@@ -2707,6 +2729,17 @@ if ($route === 'product'):
 <script>
     // ---- ドラッグ＆ドロップ並べ替え（PC、リロードなし） ----
     const ABT_CSRF = '<?= h($csrf) ?>';
+    function renameSite(oldName) {
+        let nv = prompt('サイト名を変更します。\n（このグループ全体で「' + oldName + '」をまとめて変更します）', oldName);
+        if (nv === null) { return; }
+        nv = nv.trim();
+        if (nv === '' || nv === oldName) { return; }
+        const f = document.createElement('form');
+        f.method = 'post';
+        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+        add('csrf', ABT_CSRF); add('action', 'rename_site'); add('old_site', oldName); add('new_site', nv);
+        document.body.appendChild(f); f.submit();
+    }
     let abtDrag = null;
     function gDragStart(e, el) { abtDrag = el; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); }
     function gDragEnd(el) { el.classList.remove('dragging'); clearDropMarks(); }

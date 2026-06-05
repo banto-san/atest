@@ -1129,6 +1129,52 @@ function delete_product(int $gid, string $name): array
     }
 }
 
+/**
+ * サイト名（＝ファイルの先頭フォルダ／手動サイトの登録名）をグループ内で一括変更する。
+ * サイトは保存された実体ではなく usages.file の先頭セグメント等から算出されるため、
+ * 該当 usages の file/repo を書き換える。戻り値: 変更した行数。
+ */
+function rename_site(int $gid, string $old, string $new): int
+{
+    $old = trim($old);
+    $new = trim($new);
+    if ($old === '' || $new === '' || $old === $new) { return 0; }
+    $pdo = db();
+    $st = $pdo->prepare('SELECT id, repo, file FROM usages WHERE api_id IN (SELECT id FROM apis WHERE group_id = :g)');
+    $st->execute([':g' => $gid]);
+    $rows = $st->fetchAll();
+    $upd = $pdo->prepare('UPDATE usages SET repo = :r, file = :f WHERE id = :id');
+    $n = 0;
+    $pdo->beginTransaction();
+    try {
+        foreach ($rows as $r) {
+            $file = (string) $r['file'];
+            $repo = (string) $r['repo'];
+            // 現在のサイト名（usage_site と同じ算出ロジック）
+            $pos = strpos($file, '/');
+            if ($pos !== false && $pos > 0) { $site = substr($file, 0, $pos); }
+            else { $site = $repo !== '' ? $repo : '(root)'; }
+            if ($site !== $old) { continue; }
+            if ($pos !== false && $pos > 0) {
+                $newFile = $new . substr($file, $pos);            // 先頭フォルダだけ置換（/以降は維持）
+                $newRepo = ($repo === $old) ? $new : $repo;
+            } else {
+                $newFile = ($file === $old) ? $new : $file;       // 手動サイト等（スラッシュなし）
+                $newRepo = ($repo === $old) ? $new : $repo;
+            }
+            if ($newFile !== $file || $newRepo !== $repo) {
+                $upd->execute([':r' => $newRepo, ':f' => $newFile, ':id' => (int) $r['id']]);
+                $n++;
+            }
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        throw $e;
+    }
+    return $n;
+}
+
 /* ------------------------------------------------------------------ *
  *  アカウント（ID・パスワード）管理。パスワードは暗号化保存。
  * ------------------------------------------------------------------ */
