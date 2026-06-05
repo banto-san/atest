@@ -21,6 +21,7 @@
             JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
         ) ?>;
         window.__CSRF__ = <?= json_encode(csrf_token(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        window.__IS_ADMIN__ = <?= is_admin() ? 'true' : 'false' ?>;
     </script>
     <!-- 共通フロント処理（データストア / 保存 / CSV / ランキング集計） -->
     <script src="app-core.js"></script>

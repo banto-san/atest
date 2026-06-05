@@ -25,6 +25,10 @@ function search_out(int $code, array $payload): void
 if (!current_user()) {
     search_out(401, ['error' => 'unauthorized', 'message' => 'ログインが必要です。']);
 }
+// 検索はAPI課金が発生するため管理者のみ実行可
+if (!is_admin()) {
+    search_out(403, ['error' => 'forbidden', 'message' => '他媒体の検索は管理者のみ実行できます。']);
+}
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     search_out(405, ['error' => 'method_not_allowed']);
 }

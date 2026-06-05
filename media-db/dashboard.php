@@ -4,6 +4,7 @@ require __DIR__ . '/bootstrap.php';
 require_login();
 
 $data       = load_data();
+$canSearch  = is_admin();   // API課金が発生する検索は管理者のみ
 $pageTitle  = '受注一覧・ランキング';
 $currentNav = 'dashboard';
 $pageScript = 'page-dashboard.js';
@@ -66,11 +67,13 @@ require __DIR__ . '/layout_top.php';
 
                         <div class="mt-3 pt-3 border-t border-gray-200">
                             <div class="flex flex-wrap items-center gap-2">
+                                <?php if ($canSearch): ?>
                                 <button @click="searchOtherMedia(client)" :disabled="searchingId === client.id"
                                         class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 shadow-sm disabled:opacity-50">
                                     <i :data-lucide="searchingId === client.id ? 'loader' : 'search'" :class="['w-4 h-4', searchingId === client.id ? 'sync-spin' : '']"></i>
                                     {{ searchingId === client.id ? '検索中…' : '他媒体を調べる' }}
                                 </button>
+                                <?php endif; ?>
                                 <span v-if="client.searchedAt" class="text-[11px] text-gray-400">最終検索: {{ client.searchedAt }}</span>
                             </div>
                             <div v-if="client.foundMedia && client.foundMedia.length" class="mt-2">
@@ -97,10 +100,12 @@ require __DIR__ . '/layout_top.php';
                     <i data-lucide="bar-chart-3" class="w-5 h-5 mr-2 text-purple-600"></i>
                     併用媒体ランキング
                 </h3>
+                <?php if ($canSearch): ?>
                 <button @click="searchAllPending"
                         class="text-xs font-medium text-blue-600 border border-blue-200 rounded px-2 py-1 hover:bg-blue-50 shrink-0">
                     未取得をまとめて検索
                 </button>
+                <?php endif; ?>
             </div>
 
             <div class="flex-1 overflow-y-auto pr-2">

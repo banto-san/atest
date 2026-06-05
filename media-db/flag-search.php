@@ -4,6 +4,7 @@ require __DIR__ . '/bootstrap.php';
 require_login();
 
 $data       = load_data();
+$canSearch  = is_admin();   // API課金が発生する検索は管理者のみ
 $pageTitle  = 'フラグ(媒体)別 逆引き検索';
 $currentNav = 'flag-search';
 $pageScript = 'page-flag-search.js';
@@ -40,10 +41,12 @@ require __DIR__ . '/layout_top.php';
                         <h3 class="font-bold text-gray-800 text-xl">他に利用している媒体ランキング</h3>
                         <p class="text-sm text-gray-500">「{{ selectedMediaName }}」から受注した顧客が、他に利用している媒体ドメイン</p>
                     </div>
+                    <?php if ($canSearch): ?>
                     <button @click="searchAllPending"
                             class="text-xs font-medium text-blue-600 border border-blue-200 rounded px-2 py-1 hover:bg-blue-50 shrink-0">
                         未取得をまとめて検索
                     </button>
+                    <?php endif; ?>
                 </div>
                 <div v-if="flaggedRanking.length === 0" class="text-center p-8 text-gray-400">
                     まだ集計データがありません。<br>
@@ -84,11 +87,13 @@ require __DIR__ . '/layout_top.php';
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{{ client.industry }}</span>
                                 <span v-if="client.address" class="text-xs bg-gray-50 text-gray-500 px-2 py-0.5 rounded border">{{ client.address }}</span>
+                                <?php if ($canSearch): ?>
                                 <button @click="searchOtherMedia(client)" :disabled="searchingId === client.id"
                                    class="inline-flex items-center gap-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded px-2 py-1 ml-auto disabled:opacity-50">
                                     <i :data-lucide="searchingId === client.id ? 'loader' : 'search'" :class="['w-3 h-3', searchingId === client.id ? 'sync-spin' : '']"></i>
                                     {{ searchingId === client.id ? '検索中…' : '他媒体を調べる' }}
                                 </button>
+                                <?php endif; ?>
                             </div>
                             <div v-if="client.foundMedia && client.foundMedia.length" class="mt-2 pl-1">
                                 <p class="text-xs font-medium text-gray-500 mb-1">他媒体（{{ client.foundMedia.length }}件）:</p>

@@ -11,6 +11,7 @@
 
     const seed = window.__APP_DATA__ || { users: [], media: [], clients: [] };
     const CSRF = window.__CSRF__ || '';
+    const IS_ADMIN = window.__IS_ADMIN__ === true;
 
     // ===== 全ページ共通の単一データストア =====
     const store = reactive({
@@ -152,7 +153,7 @@
     watch(() => [store.isSyncing, store.syncError], () => nextTick(refreshIcons));
 
     // ===== 公開 =====
-    window.AppCore = { store, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking };
+    window.AppCore = { store, isAdmin: IS_ADMIN, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking };
 })();
 
 

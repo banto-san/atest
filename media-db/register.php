@@ -67,7 +67,7 @@ require __DIR__ . '/layout_top.php';
                     </div>
                     <div class="mt-3">
                         <label class="block text-xs font-bold text-gray-700 mb-1">【追加】リストにないフラグ(媒体)を手動入力</label>
-                        <input type="text" v-model="newClientManualFlags" placeholder="例: WELBOX, 独自の広告枠 (複数ある場合はカンマ区切り)" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                        <input type="text" v-model="newClientManualFlags" title="リストカテゴリー最終を入力してください" placeholder="例: WELBOX, 独自の広告枠 (複数ある場合はカンマ区切り)" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
                         <p class="text-xs text-gray-500 mt-1">※ここに入力したフラグは自動的にシステムに新規登録されます。</p>
                     </div>
                 </div>
