@@ -22,6 +22,22 @@ function search_out(int $code, array $payload): void
     exit;
 }
 
+/**
+ * 住所から番地以降を落として「都道府県＋市区町村＋町名」に寄せる（検索を広くするため）。
+ * 例: 「滋賀県 野洲市 比留田 3313-2」→「滋賀県 野洲市 比留田」
+ *     「福岡県 福岡市東区 箱崎 1丁目30-17 上小寺ハイツ1号室」→「福岡県 福岡市東区 箱崎」
+ */
+function mdb_search_address(string $address): string
+{
+    $a = trim($address);
+    // 最初の数字（半角/全角）以降を削除（番地・丁目・建物名等を落とす）
+    $a = (string) preg_replace('/[0-9０-９].*$/u', '', $a);
+    // 末尾の空白・ハイフン類（全角含む）を除去。multibyte安全に /u で処理する。
+    $a = (string) preg_replace('/[\s　－ー―ｰ\-]+$/u', '', $a);
+    $a = trim($a);
+    return $a !== '' ? $a : trim($address);   // 全部消えたら元の住所を使う
+}
+
 if (!current_user()) {
     search_out(401, ['error' => 'unauthorized', 'message' => 'ログインが必要です。']);
 }
@@ -66,19 +82,27 @@ if ($name === '') {
     search_out(400, ['error' => 'no_name', 'message' => '会社名が空です。']);
 }
 
-// プロンプト：必ずウェブ検索し、見つかったURLを本文にも列挙させる（取りこぼし防止）
-$prompt = "あなたは企業の掲載先を調べる調査アシスタントです。"
-        . "必ずウェブ検索ツールを使って、次の会社が掲載・登録されている実在のウェブページ"
-        . "（公式サイト、ポータル/媒体サイト、SNS、口コミ、地図、求人サイト等）を調べてください。\n"
-        . "会社名: {$name}\n住所: {$address}\n"
-        . "同じ会社だと確信できるページについて、実際にアクセスできる完全なURL（http から始まる形）を本文に1行ずつ列挙してください。"
-        . "存在しないURL・例示・省略形（…）は書かないでください。出典(引用)も必ず付けてください。";
+// 検索は「会社名＋住所（番地抜き）」で広めに行う（番地まで入れると狭すぎて取りこぼす）
+$searchAddr = mdb_search_address($address);
 
-// OpenAI Responses API 呼び出し（まず検索を強制。弾かれたら強制なしで再試行）
-$callOpenAI = function (bool $force) use ($apiKey, $model, $prompt): array {
+// プロンプト：網羅的に・実在ページのみ・推測URL禁止
+$prompt = "あなたは企業の掲載先を調べる調査アシスタントです。"
+        . "必ずウェブ検索ツールを使い、次の会社が掲載・登録されている実在のウェブページを、できるだけ多く・漏れなく挙げてください。\n"
+        . "会社名: {$name}\n所在地: {$searchAddr}\n"
+        . "対象例: 公式サイト、求人サイト（エンゲージ/スタンバイ/Indeed/ハローワーク等）、"
+        . "地域ポータル・口コミ（エキテン/イタンジ/Yahoo!マップ/Googleマップ/NAVITIME等）、業界ポータル、"
+        . "公式SNS（実在する公式アカウントのみ）。\n"
+        . "ルール:\n"
+        . "・同じ会社だと確信でき、実際にアクセスできるページのみを挙げる。\n"
+        . "・推測やURLの作文（存在しないSNSアカウント等）は絶対に含めない。\n"
+        . "・見つかったページのURLを本文に1行ずつ完全な形（httpから）で列挙し、出典(引用)も必ず付ける。\n"
+        . "・できるだけ多くの媒体を網羅する。";
+
+// OpenAI Responses API 呼び出し（検索の網羅性を上げるため search_context_size=high）
+$callOpenAI = function (array $tools, bool $force) use ($apiKey, $model, $prompt): array {
     $body = [
         'model' => $model,
-        'tools' => [['type' => 'web_search_preview']],
+        'tools' => $tools,
         'input' => $prompt,
     ];
     if ($force) {
@@ -100,9 +124,12 @@ $callOpenAI = function (bool $force) use ($apiKey, $model, $prompt): array {
     return ['status' => $code, 'body' => $resp === false ? '' : (string) $resp, 'error' => $resp === false ? $err : ''];
 };
 
-$r = $callOpenAI(true);
+$toolsRich  = [['type' => 'web_search_preview', 'search_context_size' => 'high']];
+$toolsPlain = [['type' => 'web_search_preview']];
+
+$r = $callOpenAI($toolsRich, true);
 if ($r['status'] !== 200) {
-    $r2 = $callOpenAI(false);   // tool_choice等で弾かれたら強制なしで再試行
+    $r2 = $callOpenAI($toolsPlain, false);   // 拡張オプション/強制で弾かれたら素の構成で再試行
     if ($r2['status'] === 200) {
         $r = $r2;
     }
@@ -180,8 +207,18 @@ function extract_found_media($node): array
     };
     $walk($node);
 
-    // 実在ページ(引用)を優先。引用が無いときだけ本文URLを使う（存在しないページの混入を防ぐ）。
-    $urls = $cite !== [] ? $cite : $text;
+    // 引用(実在ページ)を採用しつつ、本文URLも加えて網羅性を上げる。
+    // ただし本文中のSNSは「推測でっち上げ」が多いので除外（実在SNSは引用に入るため上で採用済み）。
+    $sns = ['facebook.com', 'm.facebook.com', 'fb.com', 'twitter.com', 'x.com', 'instagram.com', 'tiktok.com', 'youtube.com', 'youtu.be', 'line.me', 'lin.ee', 'threads.net', 'pinterest.com', 'linkedin.com'];
+    $urls = $cite;   // まず引用（実在ページ）
+    foreach ($text as $u) {
+        $th = parse_url($u, PHP_URL_HOST);
+        $th = $th ? preg_replace('#^www\.#i', '', strtolower((string) $th)) : '';
+        if ($th !== '' && in_array($th, $sns, true)) {
+            continue;   // 本文中のSNSは除外（実在しないアカウントの混入を防ぐ）
+        }
+        $urls[$u] = $u;
+    }
 
     $noise = ['openai.com', 'bing.com', 'www.bing.com', 'google.com', 'www.google.com', 'duckduckgo.com', 'search.brave.com', 'vertexaisearch.cloud.google.com'];
     $found = [];
@@ -302,7 +339,7 @@ function looks_not_found(string $body): bool
     if ($t === '') {
         return false;
     }
-    $markers = ['404', 'not found', 'page not found', 'ページが見つかり', '見つかりませんでした', 'お探しのページ', 'ページがありません', 'ページは存在しません'];
+    $markers = ['404', 'not found', 'page not found', "isn't available", 'ページが見つかり', '見つかりませんでした', 'お探しのページ', 'ページがありません', 'ページは存在しません', 'アカウントは存在しません', 'アカウントが存在しません', 'コンテンツが見つかり', 'ご利用いただけません'];
     foreach ($markers as $kw) {
         if (mb_strpos($t, mb_strtolower($kw)) !== false) {
             return true;
