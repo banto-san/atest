@@ -2091,7 +2091,8 @@ function cost_anthropic(string $key): array
             }
         }
     }
-    return ['amount' => round($sum, 2), 'currency' => $cur, 'note' => 'Anthropic: Cost Report'];
+    // Cost Report の amount はセント単位（最小通貨単位）で返るため 100 で割ってドル等に直す。
+    return ['amount' => round($sum / 100, 2), 'currency' => $cur, 'note' => 'Anthropic: Cost Report'];
 }
 
 /**
