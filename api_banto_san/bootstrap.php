@@ -2067,7 +2067,8 @@ function fetch_cost_for(array $api): array
 function cost_anthropic(string $key): array
 {
     $start = gmdate('Y-m-01\T00:00:00\Z');
-    $url = 'https://api.anthropic.com/v1/organizations/cost_report?starting_at=' . rawurlencode($start) . '&limit=62';
+    // Cost Report API は limit が最大31（日次バケットで1か月分=最大31日）。
+    $url = 'https://api.anthropic.com/v1/organizations/cost_report?starting_at=' . rawurlencode($start) . '&limit=31';
     $r = http_request('GET', $url, ['headers' => [
         'x-api-key: ' . $key,
         'anthropic-version: 2023-06-01',
