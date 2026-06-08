@@ -71,9 +71,15 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
 /* 記入してもらう所 */
 .fill{background:#fef9c3;border:1px dashed #ca8a04;border-radius:4px;padding:1px 6px;font-weight:bold;color:#854d0e;font-size:8.5pt;}
 
-/* スクショ差し込み枠 */
+/* スクショ差し込み枠（未挿入のプレースホルダ用） */
 .shot{border:2px dashed #94a3b8;border-radius:8px;background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 10px,#f1f5f9 10px,#f1f5f9 20px);padding:14px;text-align:center;color:#64748b;font-size:8pt;font-weight:bold;margin:10px 0;}
 .shot .ico{font-size:18pt;display:block;margin-bottom:4px;}
+
+/* 画像（実スクショ）— A4からはみ出さないよう高さを上限管理 */
+.figure{text-align:center;margin:12px 0;}
+.figure img{display:block;max-width:100%;max-height:60mm;width:auto;height:auto;margin:0 auto;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.08);}
+.figure.figure-lg img{max-height:88mm;}      /* 1ページに余裕がある所は大きめでもOK */
+.figure figcaption{font-size:7.5pt;color:#94a3b8;margin-top:5px;font-weight:bold;}
 
 /* 役割カード */
 .feature-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px;}
@@ -195,7 +201,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <span style="font-size:8.5pt;">　担当者／相談先：<span class="fill">【要記入：名前・チャット など】</span></span>
   </div>
 
-  <div class="footer">1 / 9</div>
+  <div class="footer">1 / 10</div>
 </section>
 
 <!-- ============ PAGE 2 : 全体像 ============ -->
@@ -245,7 +251,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <b>🔑 いちばん大事な一言：</b> あなたは基本的に <b>Claude Code に「言葉でお願いする」だけ</b>。GitHub への保存や heteml への公開は、ほとんど<b>自動</b>で進みます。仕組みは次ページ以降でゆっくり説明します。
   </div>
 
-  <div class="footer">2 / 9</div>
+  <div class="footer">2 / 10</div>
 </section>
 
 <!-- ============ PAGE 3 : 用語集 ============ -->
@@ -259,7 +265,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <thead><tr><th style="width:22%;">用語</th><th>やさしい説明（たとえ）</th></tr></thead>
     <tbody>
       <tr><td><b>GitHub</b><br>(ギットハブ)</td><td>ネット上にある<b>「共有フォルダ＋セーブ履歴」</b>。みんなのデータが集まる倉庫。</td></tr>
-      <tr><td><b>リポジトリ</b><br>(repo / レポ)</td><td>プロジェクト1個分のフォルダのこと。今回のチームの倉庫は <b>「atest」</b> という名前です。</td></tr>
+      <tr><td><b>リポジトリ</b><br>(repo / レポ)</td><td>プロジェクト1個分のフォルダのこと。今回のチームの倉庫は <b>「qc」</b> という名前です。</td></tr>
       <tr><td><b>コミット</b><br>(commit)</td><td>ゲームの<b>「セーブ」</b>。ここまでの状態を1区切りとして記録すること。</td></tr>
       <tr><td><b>プッシュ</b><br>(push)</td><td>セーブした内容を<b>GitHub（クラウド）に送る</b>こと。これで他の人にも共有されます。</td></tr>
       <tr><td><b>ブランチ</b><br>(branch)</td><td>作業用の<b>「枝分かれ」</b>。本番と分けて、自分の作業を安全に進める場所。</td></tr>
@@ -277,12 +283,12 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
 
   <div class="tip"><b>🧭 覚え方のコツ：</b> 「<b>コミット＝セーブ</b>」「<b>プッシュ＝クラウドに送る</b>」「<b>main＝公開スイッチ</b>」。この3つだけ頭に入れておけば、まずは大丈夫です。</div>
 
-  <div class="footer">3 / 9</div>
+  <div class="footer">3 / 10</div>
 </section>
 
-<!-- ============ PAGE 4 : セットアップ STEP1-2 ============ -->
+<!-- ============ PAGE 4 : セットアップ STEP1 ============ -->
 <section class="page">
-  <div class="header"><span>スタートアップガイド</span><span>最初の準備（STEP 1〜2）</span></div>
+  <div class="header"><span>スタートアップガイド</span><span>最初の準備（STEP 1）</span></div>
 
   <h1>3. 最初の準備（最初に一度だけ）</h1>
   <p class="lead">ここは<b>最初の1回だけ</b>の作業です。次の4ステップで「サイトを作れる状態」になります。まずは全体像を見て、そのあと順番に進めましょう。</p>
@@ -301,15 +307,27 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
   <p><b>① </b><b>github.com</b> にアクセスして、無料アカウントを作ります（メールアドレス・パスワード・ユーザー名を登録）。<br>
   <b>② </b>登録できたら、自分の <b>GitHubユーザー名（例：@yamada-taro）</b>を担当者に伝えます。</p>
 
-  <div class="shot"><span class="ico">📷</span>ここに「GitHub 新規登録画面」または「自分のユーザー名が分かる画面」のスクリーンショットを貼ってください</div>
+  <figure class="figure figure-lg">
+    <img src="img_1780891757_9526.png" alt="GitHub のユーザー名を確認する画面（スクリーンショット）">
+    <figcaption>▲ GitHub の画面。ここで自分のユーザー名を確認し、担当者へ共有します</figcaption>
+  </figure>
 
   <div class="why">
     <span class="lbl">💡 なぜ、ユーザー名を共有するの？</span>
-    <p>チームの倉庫（リポジトリ）<b>「atest」は非公開</b>です。あなたを中に入れる（招待する）には、<b>あなたのGitHubユーザー名（またはメール）が必ず必要</b>になります。名前を伝えないと、担当者は招待を送れません。</p>
+    <p>チームの倉庫（リポジトリ）<b>「qc」は非公開</b>です。あなたを中に入れる（招待する）には、<b>あなたのGitHubユーザー名（またはメール）が必ず必要</b>になります。名前を伝えないと、担当者は招待を送れません。</p>
   </div>
 
+  <div class="footer">4 / 10</div>
+</section>
+
+<!-- ============ PAGE 5 : セットアップ STEP2 ============ -->
+<section class="page">
+  <div class="header"><span>スタートアップガイド</span><span>最初の準備（STEP 2）</span></div>
+
+  <h1>3. 最初の準備（つづき）— 招待メールの承認</h1>
+
   <h3>STEP 2　届く「2通の招待メール」を承認する</h3>
-  <p>担当者が招待を送ると、あなたのメールに <b>2通</b> 届きます。<b>両方とも</b>「承認（参加）」してください。</p>
+  <p>担当者が招待を送ると、あなたのメールに <b>2通</b> 届きます。<b>両方とも</b>「承認（参加）」してください。下は届くメールのイメージです。</p>
 
   <div class="mockup-row">
     <div class="mail-mockup">
@@ -327,12 +345,12 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
 
     <div class="mail-mockup">
       <div class="mail-header">
-        <div class="mail-header-row"><div class="mail-header-label">件名</div><div style="font-weight:bold;">[GitHub] You're invited to atest</div></div>
+        <div class="mail-header-row"><div class="mail-header-label">件名</div><div style="font-weight:bold;">[GitHub] You're invited to qc</div></div>
         <div class="mail-header-row"><div class="mail-header-label">From</div><div>GitHub &lt;noreply@github.com&gt;</div></div>
       </div>
       <div class="mail-body">
-        ◯◯ has invited you to collaborate on the <b>atest</b> repository.<br>
-        （◯◯さんが、リポジトリ<b>「atest」</b>へあなたを招待しました）<br><br>
+        ◯◯ has invited you to collaborate on the <b>qc</b> repository.<br>
+        （◯◯さんが、リポジトリ<b>「qc」</b>へあなたを招待しました）<br><br>
         <span class="btn btn-green">View invitation（招待を見る）</span>
       </div>
       <div class="mail-tag">※イメージ（実際の文面とは異なります）</div>
@@ -343,71 +361,62 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <span class="lbl">💡 なぜ、招待が「2通」あるの？</span>
     <p><b>役割が違う2つ</b>への招待だからです。<br>
     ・<b>Claude の招待</b>＝<b>道具（席）</b>をもらう招待。これがないと Claude Code を使えません。<br>
-    ・<b>GitHub の招待</b>＝<b>作業場所（倉庫の鍵）</b>をもらう招待。これがないと、みんなの倉庫「atest」に入れません。<br>
+    ・<b>GitHub の招待</b>＝<b>作業場所（倉庫の鍵）</b>をもらう招待。これがないと、みんなの倉庫「qc」に入れません。<br>
     <b>両方そろって初めて作業ができます。</b></p>
   </div>
 
   <div class="alert-info" style="margin-top:8px;">📩 メールが見当たらないときは、<b>迷惑メールフォルダ</b>を確認してください。それでも無ければ担当者へ。招待リンクには<b>有効期限（数日〜7日程度）</b>がある場合があるので、届いたら早めに承認しましょう。</div>
 
-  <div class="footer">4 / 9</div>
+  <div class="footer">5 / 10</div>
 </section>
 
-<!-- ============ PAGE 5 : セットアップ STEP3-4 ============ -->
+<!-- ============ PAGE 6 : セットアップ STEP3-4 ============ -->
 <section class="page">
   <div class="header"><span>スタートアップガイド</span><span>最初の準備（STEP 3〜4）</span></div>
 
-  <h1>3. 最初の準備（つづき）</h1>
+  <h1>3. 最初の準備（つづき）— 接続と完了</h1>
 
   <h3>STEP 3　Claude Code を開いて、GitHub と「接続」する</h3>
   <p>Claude Code を初めて使うとき、<b>「GitHub と接続しますか？」</b>と聞かれます。案内にしたがって、<b>そのまま「接続（Authorize＝許可）」</b>してください。</p>
 
-  <div class="browser">
-    <div class="browser-bar">
-      <span class="dot" style="background:#f87171;"></span><span class="dot" style="background:#fbbf24;"></span><span class="dot" style="background:#34d399;"></span>
-      <span class="browser-url">🔒 github.com/login/oauth/authorize…</span>
-    </div>
-    <div class="browser-body" style="text-align:center;">
-      <div style="font-size:20pt;">🔌</div>
-      <p style="font-weight:bold;font-size:9.5pt;margin:6px 0;">Claude Code が GitHub への接続を求めています</p>
-      <p style="font-size:8pt;color:#64748b;margin-bottom:10px;">リポジトリの読み取り・書き込みを許可します</p>
-      <span class="btn btn-green">Authorize（接続を許可する）</span>
-    </div>
-  </div>
-  <div class="shot"><span class="ico">📷</span>ここに「実際の GitHub 接続（認可）画面」のスクリーンショットを貼ると、より分かりやすくなります</div>
+  <figure class="figure">
+    <img src="img_1780891950_1210.png" alt="GitHub との接続（認可）画面（スクリーンショット）">
+    <figcaption>▲ GitHub との接続（認可）画面。「Authorize／接続を許可」を押せばOK</figcaption>
+  </figure>
 
   <div class="why">
     <span class="lbl">💡 なぜ、接続が必要なの？</span>
     <p>Claude Code が<b>あなたのGitHub（倉庫）を読み書きするための「許可」</b>だからです。接続しないと、Claude Code はあなたのファイルを見ることも、保存することもできません。<b>「そのまま接続」で問題ありません。</b>もし「組織（Organization）へのアクセスを許可しますか？」と出たら、そちらも<b>許可</b>してください。</p>
   </div>
 
-  <h3>STEP 4　倉庫「atest」が見えれば、準備完了！</h3>
-  <p>接続後、Claude Code 上で <b>リポジトリ「atest」</b> を選べる／開ける状態になっていれば成功です。次のチェックがそろっていればOK。</p>
+  <h3>STEP 4　倉庫「qc」が見えれば、準備完了！</h3>
+  <p>接続後、Claude Code 上で <b>リポジトリ「qc」</b> を選べる／開ける状態になっていれば成功です。次のチェックがそろっていればOK。</p>
 
   <ul class="checklist">
     <li>☑ GitHub アカウントを作り、ユーザー名を担当者に共有した</li>
     <li>☑ 招待メール（Claude／GitHub の2通）を両方とも承認した</li>
     <li>☑ Claude Code で GitHub と接続した</li>
-    <li>☑ Claude Code から共有リポジトリ「atest」が見える／開ける</li>
+    <li>☑ Claude Code から共有リポジトリ「qc」が見える／開ける</li>
   </ul>
 
   <div class="highlight-box" style="border-color:#10b981;background:#f0fdf4;text-align:center;">
     <div style="font-size:20pt;">🎉</div>
     <p style="font-weight:900;font-size:12pt;color:#059669;margin:4px 0;">準備完了です！</p>
-    <p style="font-size:9pt;margin:0;">ここから先は、いよいよ実際にサイトを作っていきます（次ページへ）。<br>ここまでの設定は<b>最初の1回だけ</b>。次回からはすぐ作業に入れます。</p>
+    <p style="font-size:9pt;margin:0;">ここから先は、いよいよ実際にサイトを作っていきます。<br>ここまでの設定は<b>最初の1回だけ</b>。次回からはすぐ作業に入れます。</p>
   </div>
 
-  <div class="footer">5 / 9</div>
+  <div class="footer">6 / 10</div>
 </section>
 
-<!-- ============ PAGE 6 : フォルダ構成と自分のフォルダ ============ -->
+<!-- ============ PAGE 7 : フォルダ構成と自分のフォルダ ============ -->
 <section class="page">
   <div class="header"><span>スタートアップガイド</span><span>作業場所のルール（フォルダ構成）</span></div>
 
   <h1>4. 作業場所のルール（自分のフォルダを作る）</h1>
-  <p class="lead">倉庫「atest」は <b>複数人で共有</b>しています。お互いの作業がぶつからないよう、<b>「自分専用のフォルダ」</b>を作って、その中だけで作業するのが基本ルールです。</p>
+  <p class="lead">倉庫「qc」は <b>複数人で共有</b>しています。お互いの作業がぶつからないよう、<b>「自分専用のフォルダ」</b>を作って、その中だけで作業するのが基本ルールです。</p>
 
-  <h3>📁 倉庫「atest」の中身のイメージ</h3>
-<pre class="tree">atest/                        <span class="cmt">← 共有リポジトリ（みんなの倉庫）</span>
+  <h3>📁 倉庫「qc」の中身のイメージ</h3>
+<pre class="tree">qc/                        <span class="cmt">← 共有リポジトリ（みんなの倉庫）</span>
 ├─ api_banto_san/             <span class="cmt">← 既にある人のプロジェクト（さわらない）</span>
 ├─ <span class="me">◯◯◯（あなたの名前）/</span>        <span class="me">← 【ここを新しく作る】あなたの作業場所</span>
 │    ├─ index.html            <span class="cmt">  例）トップページ</span>
@@ -432,10 +441,10 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <b>原則：「自分のフォルダの中」だけを編集する。他人のフォルダ・<span style="font-family:monospace;">.github</span>・README などはさわらない。</b>不要そうに見えても、消す前に必ず相談してください。
   </div>
 
-  <div class="footer">6 / 9</div>
+  <div class="footer">7 / 10</div>
 </section>
 
-<!-- ============ PAGE 7 : サイトを作る流れ ============ -->
+<!-- ============ PAGE 8 : サイトを作る流れ ============ -->
 <section class="page">
   <div class="header"><span>スタートアップガイド</span><span>サイトを作る1日の流れ</span></div>
 
@@ -443,7 +452,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
   <p class="lead">準備ができたら、あとはこの流れの<b>くり返し</b>です。むずかしい操作はほとんどなく、<b>Claude Code に言葉でお願いするだけ</b>で進みます。</p>
 
   <div class="vflow">
-    <div class="vstep"><div class="vnum">1</div><div class="vbody"><div class="t">🤖 Claude Code を開き、倉庫「atest」を開く</div><div class="d">作業のスタート地点。前回のつづきから始められます。</div></div></div>
+    <div class="vstep"><div class="vnum">1</div><div class="vbody"><div class="t">🤖 Claude Code を開き、倉庫「qc」を開く</div><div class="d">作業のスタート地点。前回のつづきから始められます。</div></div></div>
     <div class="vstep"><div class="vnum">2</div><div class="vbody"><div class="t">💬 自分のフォルダを伝えて「〜を作って」とお願いする</div><div class="d">例）「私のフォルダ（yamada）の中に、会社紹介の1ページサイトを作って」。日本語の普通の言葉でOK。</div></div></div>
     <div class="vstep"><div class="vnum">3</div><div class="vbody"><div class="t">👀 できあがった内容を確認する</div><div class="d">イメージと違えば「ここをこう直して」と伝えれば、何度でも修正してくれます。</div></div></div>
     <div class="vstep"><div class="vnum">4</div><div class="vbody"><div class="t">💾 保存する（コミット＆プッシュ）</div><div class="d">OKなら保存。これで GitHub（クラウド）に内容が送られます。Claude Code に「保存して」と頼めばOK。</div></div></div>
@@ -458,12 +467,12 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     ・一度で完璧でなくてOK。<b>「ここをこう直して」と少しずつ</b>育てるイメージで。
   </div>
 
-  <div class="alert-info"><b>🔎 公開後の確認：</b>自分のサイトのURLは <span style="font-family:monospace;">https://<span class="fill">【要記入：heteml公開URL】</span>/atest/◯◯◯（自分のフォルダ名）/</span> のような形になります。正しい公開URLは担当者に確認してください。</div>
+  <div class="alert-info"><b>🔎 公開後の確認：</b>自分のサイトのURLは <span style="font-family:monospace;">https://<span class="fill">【要記入：heteml公開URL】</span>/qc/◯◯◯（自分のフォルダ名）/</span> のような形になります。正しい公開URLは担当者に確認してください。</div>
 
-  <div class="footer">7 / 9</div>
+  <div class="footer">8 / 10</div>
 </section>
 
-<!-- ============ PAGE 8 : heteml連携の仕組み ============ -->
+<!-- ============ PAGE 9 : heteml連携の仕組み ============ -->
 <section class="page">
   <div class="header"><span>スタートアップガイド</span><span>heteml連携の仕組み（自動公開と手動アップ）</span></div>
 
@@ -477,7 +486,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <div class="flow-arrow">➜</div>
     <div class="flow-step"><div class="flow-badge">送信</div><div class="flow-ico">📤</div><div class="flow-title">FTPS で送信</div><div class="flow-desc">ファイルを安全に転送</div></div>
     <div class="flow-arrow">➜</div>
-    <div class="flow-step" style="border-color:#0284c7;"><div class="flow-badge" style="background:#0284c7;">公開</div><div class="flow-ico">🌐</div><div class="flow-title" style="color:#0284c7;">heteml に配置</div><div class="flow-desc">/web/atest/ に置かれ公開</div></div>
+    <div class="flow-step" style="border-color:#0284c7;"><div class="flow-badge" style="background:#0284c7;">公開</div><div class="flow-ico">🌐</div><div class="flow-title" style="color:#0284c7;">heteml に配置</div><div class="flow-desc">/web/qc/ に置かれ公開</div></div>
   </div>
   <p style="font-size:8pt;color:#64748b;text-align:center;margin-top:-4px;">※この自動設定は <span style="font-family:monospace;">.github/workflows/deploy.yml</span> に書かれています（さわらないでください）。</p>
 
@@ -511,15 +520,15 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
   </div>
 
   <h3>📤 手動アップのやり方（ざっくり）</h3>
-  <p style="font-size:8.5pt;">① heteml の管理画面にログイン → ② <b>ファイルマネージャー</b>や<b>FTP</b>で、対象ファイルを <span style="font-family:monospace;">/web/atest/…</span> の該当フォルダにアップロード。<br>
+  <p style="font-size:8.5pt;">① heteml の管理画面にログイン → ② <b>ファイルマネージャー</b>や<b>FTP</b>で、対象ファイルを <span style="font-family:monospace;">/web/qc/…</span> の該当フォルダにアップロード。<br>
   ログイン情報（ID／パスワード）は担当者から共有されます：<span class="fill">【要記入：共有方法／保管場所】</span></p>
 
   <div class="alert-danger" style="margin-top:6px;"><b>🔒 ID・パスワードは社外秘です。</b>チャットやメールで外部に貼らない／公開リポジトリに書かない／人に教えない。万一の漏えいはサイト全体の事故につながります。</div>
 
-  <div class="footer">8 / 9</div>
+  <div class="footer">9 / 10</div>
 </section>
 
-<!-- ============ PAGE 9 : ルール・FAQ・まとめ ============ -->
+<!-- ============ PAGE 10 : ルール・FAQ・まとめ ============ -->
 <section class="page">
   <div class="header"><span>スタートアップガイド</span><span>守ってほしいこと・FAQ・まとめ</span></div>
 
@@ -541,7 +550,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <tbody>
       <tr><td>招待メールが届かない</td><td>迷惑メールを確認 → 無ければ担当者へ。リンクは期限切れの場合あり。</td></tr>
       <tr><td>GitHub接続をミスした／間違えて押した</td><td>もう一度「接続（Authorize）」をやり直せば直ります。慌てなくてOK。</td></tr>
-      <tr><td>自分のサイトのURLが分からない</td><td><span style="font-family:monospace;">https://<span class="fill">【要記入URL】</span>/atest/自分のフォルダ/</span>。正確なURLは担当者へ。</td></tr>
+      <tr><td>自分のサイトのURLが分からない</td><td><span style="font-family:monospace;">https://<span class="fill">【要記入URL】</span>/qc/自分のフォルダ/</span>。正確なURLは担当者へ。</td></tr>
       <tr><td>heteml に反映されない</td><td>①mainに反映済みか確認 ②公開まで数分待つ ③手動アップが必要なファイルでないか確認。</td></tr>
       <tr><td>何か消してしまったかも…</td><td><b>すぐ担当者へ連絡。</b>履歴から戻せる可能性が高いので、自分で慌てて操作しない。</td></tr>
       <tr><td>用語が分からなくなった</td><td>本資料 <b>P.3「用語集」</b>に戻って確認。全部覚えなくて大丈夫。</td></tr>
@@ -558,8 +567,6 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     </p>
   </div>
 
-  <div class="footer">9 / 9</div>
-</section>
-
-</body>
+  <div class="footer">10 / 10</div>
+</section></body>
 </html>
