@@ -22,7 +22,7 @@ if (!isset($data))       { $data = load_data(); }
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= h($pageTitle) ?> | <?= h(MDB_APP_NAME) ?></title>
     <!-- Tailwind CSS（事前ビルド済み。CDNの実行時生成をやめて画面のチラつきを解消） -->
-    <link rel="stylesheet" href="tailwind.css">
+    <link rel="stylesheet" href="<?= function_exists('mdb_asset') ? mdb_asset('tailwind.css') : 'tailwind.css' ?>">
     <!-- Vue.js -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <!-- Lucide Icons -->

@@ -24,10 +24,10 @@
         window.__IS_ADMIN__ = <?= is_admin() ? 'true' : 'false' ?>;
     </script>
     <!-- 共通フロント処理（データストア / 保存 / CSV / ランキング集計） -->
-    <script src="app-core.js"></script>
+    <script src="<?= function_exists('mdb_asset') ? mdb_asset('app-core.js') : 'app-core.js' ?>"></script>
     <?php if (!empty($pageScript)): ?>
     <!-- このページ専用の Vue アプリ -->
-    <script src="<?= h($pageScript) ?>"></script>
+    <script src="<?= function_exists('mdb_asset') ? mdb_asset($pageScript) : h($pageScript) ?>"></script>
     <?php endif; ?>
 </body>
 </html>

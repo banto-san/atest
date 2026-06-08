@@ -119,6 +119,9 @@ if ($r['status'] !== 200) {
 
 // 応答からURL収集 ＋ AIの本文（0件時の原因確認用）
 $found  = extract_found_media($json);
+if (mdb_config('VERIFY_URLS', true)) {
+    $found = filter_reachable($found);   // 実際にアクセスできるURLだけに絞る（リンク切れ除外）
+}
 $aiText = extract_text($json);
 
 $client['foundMedia'] = $found;
@@ -208,6 +211,58 @@ function mdb_valid_domain(string $host): bool
         return false;
     }
     return (bool) preg_match('/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $host);
+}
+
+/**
+ * 到達可能なURLだけに絞る（リンク切れ等を除外）。curl_multi で並列に確認する。
+ * - 「あり」とみなす: 2xx/3xx、または存在するがブロック/制限される 401/403/405/429
+ * - 除外: 接続不可/DNS失敗(0)・404・410・5xx
+ * - 全滅した場合は誤検知の可能性があるため、元のリストをそのまま返す
+ */
+function filter_reachable(array $found): array
+{
+    if (count($found) === 0) {
+        return $found;
+    }
+    $found = array_slice($found, 0, 30);   // 多すぎる場合の上限（時間対策）
+    $mh = curl_multi_init();
+    $handles = [];
+    foreach ($found as $i => $m) {
+        $ch = curl_init($m['url']);
+        curl_setopt_array($ch, [
+            CURLOPT_NOBODY         => true,    // HEADで軽く確認
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 4,
+            CURLOPT_TIMEOUT        => 7,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_SSL_VERIFYPEER => false,   // 到達確認のみのため緩める
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; MediaDB/1.0)',
+            CURLOPT_RETURNTRANSFER => true,
+        ]);
+        curl_multi_add_handle($mh, $ch);
+        $handles[$i] = $ch;
+    }
+    $running = null;
+    do {
+        curl_multi_exec($mh, $running);
+        if ($running > 0) {
+            curl_multi_select($mh, 1.0);
+        }
+    } while ($running > 0);
+
+    $kept = [];
+    foreach ($handles as $i => $ch) {
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+        $ok = ($code >= 200 && $code < 400) || in_array($code, [401, 403, 405, 429], true);
+        if ($ok) {
+            $kept[] = $found[$i];
+        }
+    }
+    curl_multi_close($mh);
+    return $kept !== [] ? $kept : $found;   // 全滅時は誤検知回避で元を返す
 }
 
 /** APIレスポンスからAIの本文テキストを取り出す（0件時の原因確認・表示用） */

@@ -5,7 +5,9 @@
  */
 (function () {
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
-    const { store, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking, isValidDomain } = AppCore;
+    const { store, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking } = AppCore;
+    // app-core.js が古くても壊れないよう保険（本来は AppCore.isValidDomain を使用）
+    const isValidDomain = AppCore.isValidDomain || ((d) => typeof d === 'string' && /\./.test(d));
 
     createApp({
         setup() {

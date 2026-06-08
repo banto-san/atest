@@ -33,6 +33,17 @@ function h(?string $s): string
     return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * 静的アセット(css/js)のURLにファイル更新時刻を付けてキャッシュ対策する。
+ * 例: tailwind.css → tailwind.css?v=1717..  。アップし直すと自動で最新が読まれる。
+ */
+function mdb_asset(string $file): string
+{
+    $path = __DIR__ . '/' . $file;
+    $v = is_file($path) ? (string) filemtime($path) : (string) time();
+    return h($file . '?v=' . $v);
+}
+
 /** 指定URLへリダイレクトして終了 */
 function redirect(string $url): void
 {

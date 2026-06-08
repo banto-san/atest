@@ -22,6 +22,9 @@ return [
     'SEARCH_PROVIDER' => 'openai',
     'SEARCH_API_KEY'  => '',           // sk-...（検索用の通常キー）
     'SEARCH_MODEL'    => 'gpt-4o-mini',
+    // 検索結果を「実際にアクセスできるURLだけ」に自動でしぼる（リンク切れ除外）。
+    // 既定 true。誤って消える場合は false にすると無効化できる。
+    'VERIFY_URLS'     => true,
 
     // ===== 使用額の表示（任意）=====
     // 当月の使用額を表示するには「Adminキー(sk-admin-...)」が必要（通常キーでは不可）。
