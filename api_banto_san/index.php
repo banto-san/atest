@@ -367,6 +367,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'gcp_month_breakdown') {
+        require_role_at_least($gid, 'member');
+        header('Content-Type: application/json');
+        $prod = (string) ($_POST['product'] ?? '');
+        $ym = (string) ($_POST['ym'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}$/', $ym)) { echo json_encode(['error' => '月の指定が不正です。']); exit; }
+        $src = null;
+        foreach (list_projects($gid) as $p) {
+            if ((string) ($p['product'] ?? '') !== $prod) { continue; }
+            $s = resolve_cost_source($gid, $p);
+            if ($s && ($s['cost_type'] ?? '') === 'gcp_bq') { $src = $s; break; }
+        }
+        if (!$src) { echo json_encode(['error' => 'このプロダクトに Google Cloud(BigQuery) のキーが見つかりません。']); exit; }
+        try {
+            $r = gcp_bq_breakdown((string) $src['secret'], (string) $src['cost_account'], $ym . '-01');
+            echo json_encode(['currency' => $r['currency'], 'total' => $r['total'], 'breakdown' => $r['breakdown'], 'has_data' => $r['has_data']]);
+        } catch (Throwable $e) {
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
     if ($action === 'save_project') {
         require_role_at_least($gid, 'member');
         $pidIn = isset($_POST['project_id']) && $_POST['project_id'] !== '' ? (int) $_POST['project_id'] : null;
@@ -2381,18 +2403,39 @@ if ($route === 'product'):
     }
     arsort($gcpBreakdown);
     $gcpBdMax = $gcpBreakdown ? max($gcpBreakdown) : 1;
+    // このプロダクトに Google Cloud(BigQuery) の箱があれば、月を切り替えて内訳を取得できる
+    $hasGcp = false;
+    if ($editable) {
+        foreach ($pboxes as $b) {
+            $s = resolve_cost_source($gid, $b);
+            if ($s && ($s['cost_type'] ?? '') === 'gcp_bq') { $hasGcp = true; break; }
+        }
+    }
     ?>
-    <?php if ($gcpBreakdown): ?>
+    <?php if ($gcpBreakdown || $hasGcp): ?>
     <!-- コスト内訳（サービス別） -->
     <div class="panel compact-bars" style="margin-bottom:18px">
-        <h3>コスト内訳（サービス別・当月）</h3>
-        <?php $dc = donut_colors(); $i = 0; foreach ($gcpBreakdown as $svc => $amt): ?>
-            <div class="bar-row">
-                <span class="nm"><?= h($svc) ?></span>
-                <span class="bar-track"><span class="bar-fill" style="width:<?= round($amt / $gcpBdMax * 100, 1) ?>%;background:<?= h($dc[$i % count($dc)]) ?>"></span></span>
-                <span class="v"><?= h($gcpCur) ?> <?= number_format($amt, (fmod($amt, 1.0) === 0.0) ? 0 : 2) ?></span>
-            </div>
-        <?php $i++; endforeach; ?>
+        <h3 style="display:flex;align-items:center;gap:8px">コスト内訳（サービス別）
+            <?php if ($hasGcp): ?>
+            <span class="grow" style="flex:1"></span>
+            <select id="gcpMonth" onchange="loadGcpBreakdown()" style="font-size:12px;padding:4px 8px;width:auto">
+                <?php for ($m = 0; $m < 12; $m++): $t = strtotime(date('Y-m-01') . " -{$m} month"); ?>
+                    <option value="<?= date('Y-m', $t) ?>"<?= $m === 0 ? ' selected' : '' ?>><?= date('Y年n月', $t) ?></option>
+                <?php endfor; ?>
+            </select>
+            <?php endif; ?>
+        </h3>
+        <div id="gcpBdBars" data-product="<?= h($pname) ?>">
+            <?php if ($gcpBreakdown): $dc = donut_colors(); $i = 0; foreach ($gcpBreakdown as $svc => $amt): ?>
+                <div class="bar-row">
+                    <span class="nm"><?= h($svc) ?></span>
+                    <span class="bar-track"><span class="bar-fill" style="width:<?= round($amt / $gcpBdMax * 100, 1) ?>%;background:<?= h($dc[$i % count($dc)]) ?>"></span></span>
+                    <span class="v"><?= h($gcpCur) ?> <?= number_format($amt, (fmod($amt, 1.0) === 0.0) ? 0 : 2) ?></span>
+                </div>
+            <?php $i++; endforeach; else: ?>
+                <div class="muted" style="font-size:13px"><?= $hasGcp ? '月を選ぶと内訳を取得します。' : '内訳データがありません。' ?></div>
+            <?php endif; ?>
+        </div>
     </div>
     <?php endif; ?>
 
@@ -2548,6 +2591,32 @@ if ($route === 'product'):
     }
     function openLogo() { const d = document.getElementById('logoDialog'); if (d) d.showModal(); }
     const DETAIL_CSRF = '<?= h($csrf) ?>';
+    // 月を切り替えて Google Cloud のサービス別内訳を取得・描画
+    const GCP_BD_COLORS = ['#2f7ad6','#f5b81e','#34a853','#ea4335','#9c27b0','#00acc1','#ff7043','#789262','#5c6bc0','#d4a017','#26a69a','#8d6e63','#ec407a'];
+    function gcpEsc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function loadGcpBreakdown() {
+        const sel = document.getElementById('gcpMonth');
+        const box = document.getElementById('gcpBdBars');
+        if (!sel || !box) { return; }
+        const ym = sel.value, product = box.getAttribute('data-product');
+        box.innerHTML = '<div class="muted" style="font-size:13px">読み込み中…</div>';
+        const b = new URLSearchParams();
+        b.append('csrf', DETAIL_CSRF); b.append('action', 'gcp_month_breakdown'); b.append('product', product); b.append('ym', ym);
+        fetch('index.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: b })
+            .then(r => r.json()).then(d => {
+                if (d.error) { box.innerHTML = '<div class="muted" style="font-size:13px">' + gcpEsc(d.error) + '</div>'; return; }
+                const bd = d.breakdown || [];
+                if (!bd.length) { box.innerHTML = '<div class="muted" style="font-size:13px">この月のデータはありません。</div>'; return; }
+                const max = Math.max.apply(null, bd.map(x => x.amount)) || 1;
+                box.innerHTML = bd.map((x, i) => {
+                    const w = Math.round(x.amount / max * 1000) / 10;
+                    const amt = (x.amount % 1 === 0) ? x.amount.toLocaleString() : x.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    return '<div class="bar-row"><span class="nm">' + gcpEsc(x.service) + '</span>'
+                        + '<span class="bar-track"><span class="bar-fill" style="width:' + w + '%;background:' + GCP_BD_COLORS[i % GCP_BD_COLORS.length] + '"></span></span>'
+                        + '<span class="v">' + gcpEsc(d.currency) + ' ' + amt + '</span></div>';
+                }).join('');
+            }).catch(() => { box.innerHTML = '<div class="muted" style="font-size:13px">取得に失敗しました。</div>'; });
+    }
     function renameSite(oldName) {
         abtPrompt('サイト名を変更します。\n（このグループ全体で「' + oldName + '」をまとめて変更します）', oldName, function (nv) {
             if (nv === oldName) { return; }

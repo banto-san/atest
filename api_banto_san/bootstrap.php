@@ -1968,18 +1968,31 @@ function gcp_access_token(string $saJson): string
 /** Google Cloud 当月コスト（BigQuery 課金エクスポートを集計）。$table は project.dataset.table */
 function cost_gcp_bq(string $saJson, string $table): array
 {
+    $r = gcp_bq_breakdown($saJson, $table, gmdate('Y-m-01'));
+    if (!$r['has_data']) { return ['amount' => 0.0, 'currency' => 'JPY', 'note' => 'GCP: 当月データなし']; }
+    return ['amount' => round(max(0.0, $r['total']), 2), 'currency' => $r['currency'], 'note' => 'GCP: BigQuery集計', 'breakdown' => $r['breakdown']];
+}
+
+/**
+ * 指定月（$monthStart = 'YYYY-MM-01'）の Google Cloud コストを
+ * サービス別に集計して返す。戻り値: ['currency','total','breakdown'=>[{service,amount}],'has_data']
+ */
+function gcp_bq_breakdown(string $saJson, string $table, string $monthStart): array
+{
     $sa = json_decode($saJson, true);
     $project = is_array($sa) ? ($sa['project_id'] ?? '') : '';
     if ($project === '') { throw new RuntimeException('サービスアカウントJSONに project_id がありません。'); }
     if (!preg_match('/^[A-Za-z0-9._\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_*\-]+$/', $table)) {
         throw new RuntimeException('BigQueryテーブルは「project.dataset.table」形式で指定してください。');
     }
+    if (!preg_match('/^\d{4}-\d{2}-01$/', $monthStart)) { $monthStart = gmdate('Y-m-01'); }
+    $monthEnd = gmdate('Y-m-01', strtotime($monthStart . ' +1 month'));
     $token = gcp_access_token($saJson);
-    $monthStart = gmdate('Y-m-01');
-    // サービス別×通貨で集計（合計と内訳を1クエリで取得）
+    // サービス別×通貨で集計（合計と内訳を1クエリで取得）。指定月の[月初, 翌月初)で絞る。
     $sql = "SELECT service.description AS svc, currency AS cur, "
          . "SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net "
          . "FROM `{$table}` WHERE usage_start_time >= TIMESTAMP('{$monthStart} 00:00:00 UTC') "
+         . "AND usage_start_time < TIMESTAMP('{$monthEnd} 00:00:00 UTC') "
          . "GROUP BY svc, cur ORDER BY net DESC";
     $url = 'https://bigquery.googleapis.com/bigquery/v2/projects/' . rawurlencode($project) . '/queries';
     $r = http_request('POST', $url, [
@@ -1990,7 +2003,7 @@ function cost_gcp_bq(string $saJson, string $table): array
     $d = json_decode($r['body'], true);
     if (!($d['jobComplete'] ?? false)) { throw new RuntimeException('BigQueryジョブが時間内に完了しませんでした。'); }
     $rows = $d['rows'] ?? [];
-    if (!$rows) { return ['amount' => 0.0, 'currency' => 'JPY', 'note' => 'GCP: 当月データなし']; }
+    if (!$rows) { return ['currency' => 'JPY', 'total' => 0.0, 'breakdown' => [], 'has_data' => false]; }
     // 通貨ごとの合計を出し、最も大きい通貨を代表として採用
     $byCur = [];
     foreach ($rows as $row) {
@@ -2015,7 +2028,7 @@ function cost_gcp_bq(string $saJson, string $table): array
         $breakdown = array_slice($breakdown, 0, 12);
         if ($rest > 0) { $breakdown[] = ['service' => 'その他', 'amount' => round($rest, 2)]; }
     }
-    return ['amount' => round(max(0.0, (float) $byCur[$topCur]), 2), 'currency' => $topCur, 'note' => 'GCP: BigQuery集計', 'breakdown' => $breakdown];
+    return ['currency' => $topCur, 'total' => round((float) $byCur[$topCur], 2), 'breakdown' => $breakdown, 'has_data' => true];
 }
 
 
