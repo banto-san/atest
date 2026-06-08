@@ -53,20 +53,6 @@ if ($user) {
     ?>
     <div class="max-w-6xl mx-auto space-y-8">
 
-        <!-- 当月のAPI使用額（このサイトがOpenAIで使った金額。Adminキー設定時のみ表示） -->
-        <div v-if="monthlyCost && monthlyCost.enabled" class="flex flex-col items-end gap-1">
-            <span class="inline-flex items-center gap-1.5 text-xs bg-white border border-gray-200 rounded-full px-3 py-1.5 shadow-sm">
-                <i data-lucide="circle-dollar-sign" class="w-4 h-4 text-green-600"></i>
-                <span class="text-gray-500">OpenAI 当月使用分<span v-if="monthlyCost.scope">（{{ monthlyCost.scope === 'project' ? 'このサイト分' : '組織全体' }}）</span>:</span>
-                <template v-if="monthlyCost.error"><span class="text-gray-400">{{ monthlyCost.error }}</span></template>
-                <template v-else>
-                    <span class="font-bold text-gray-800">¥{{ Number(monthlyCost.jpy).toLocaleString() }}</span>
-                    <span class="text-gray-400">（約 ${{ monthlyCost.usd }} / レート{{ monthlyCost.rate }}）</span>
-                </template>
-            </span>
-            <span v-if="monthlyCost.note" class="text-[11px] text-amber-600 max-w-md text-right leading-snug">{{ monthlyCost.note }}</span>
-        </div>
-
         <!-- ようこそ（ヒーロー） -->
         <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 p-8 text-white shadow-lg">
             <div class="relative z-10">
@@ -85,6 +71,41 @@ if ($user) {
                 </div>
             </div>
             <i data-lucide="database" class="absolute -right-6 -bottom-6 w-40 h-40 text-white/10"></i>
+        </div>
+
+        <!-- 当月のAI利用料金（このサイトがOpenAIで使った金額。Adminキー設定時のみ表示） -->
+        <div v-if="monthlyCost && monthlyCost.enabled" class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div class="flex items-center justify-between gap-4 p-6">
+                <div class="flex items-center gap-4">
+                    <div class="bg-green-50 text-green-600 p-3 rounded-xl shrink-0">
+                        <i data-lucide="circle-dollar-sign" class="w-8 h-8"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center flex-wrap gap-2">
+                            <p class="text-base font-bold text-gray-800">当月のAI利用料金</p>
+                            <span v-if="monthlyCost.scope"
+                                  class="text-xs font-medium px-2 py-0.5 rounded-full border"
+                                  :class="monthlyCost.scope === 'project' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'">
+                                {{ monthlyCost.scope === 'project' ? 'このサイト分' : '組織全体' }}
+                            </span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">他媒体検索（OpenAI）で今月使った金額です</p>
+                    </div>
+                </div>
+                <div class="shrink-0">
+                    <template v-if="monthlyCost.error">
+                        <p class="text-sm text-gray-400">{{ monthlyCost.error }}</p>
+                    </template>
+                    <template v-else>
+                        <p class="text-3xl font-bold text-gray-900">¥{{ Number(monthlyCost.jpy).toLocaleString() }}</p>
+                        <p class="text-xs text-gray-400 mt-1">約 ${{ monthlyCost.usd }}（換算レート {{ monthlyCost.rate }}円）</p>
+                    </template>
+                </div>
+            </div>
+            <div v-if="monthlyCost.note" class="bg-amber-50 border-t border-amber-200 px-6 py-3 text-xs text-amber-700 flex items-start gap-2">
+                <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5"></i>
+                <span>{{ monthlyCost.note }}</span>
+            </div>
         </div>
 
         <!-- 現状サマリー -->
