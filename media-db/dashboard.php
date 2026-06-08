@@ -14,7 +14,7 @@ require __DIR__ . '/layout_top.php';
 <div class="max-w-6xl mx-auto space-y-6">
 
     <!-- 当月のAPI使用額（OpenAI Adminキー設定時のみ表示） -->
-    <div v-if="monthlyCost && monthlyCost.enabled" class="flex justify-end">
+    <div v-if="monthlyCost && monthlyCost.enabled" class="flex flex-col items-end gap-1">
         <span class="inline-flex items-center gap-1.5 text-xs bg-white border border-gray-200 rounded-full px-3 py-1.5 shadow-sm">
             <i data-lucide="circle-dollar-sign" class="w-4 h-4 text-green-600"></i>
             <span class="text-gray-500">OpenAI 当月使用分<span v-if="monthlyCost.scope">（{{ monthlyCost.scope === 'project' ? 'このサイト分' : '組織全体' }}）</span>:</span>
@@ -24,6 +24,7 @@ require __DIR__ . '/layout_top.php';
                 <span class="text-gray-400">（約 ${{ monthlyCost.usd }} / レート{{ monthlyCost.rate }}）</span>
             </template>
         </span>
+        <span v-if="monthlyCost.note" class="text-[11px] text-amber-600 max-w-md text-right leading-snug">{{ monthlyCost.note }}</span>
     </div>
 
     <!-- 集計期間の指定 -->
