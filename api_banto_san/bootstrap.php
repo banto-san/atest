@@ -896,6 +896,7 @@ function db(): PDO
             monthly_cost       REAL,
             balance            REAL,
             cost_note          TEXT    NOT NULL DEFAULT '',
+            cost_breakdown     TEXT,
             currency           TEXT    NOT NULL DEFAULT 'USD',
             created_at         TEXT    NOT NULL,
             updated_at         TEXT    NOT NULL
@@ -1018,7 +1019,7 @@ function db(): PDO
 
     // projects.product を後付け
     $projCols = array_column($pdo->query('PRAGMA table_info(projects)')->fetchAll(), 'name');
-    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''", 'balance' => 'REAL', 'credential_id' => 'INTEGER', 'cost_note' => "TEXT NOT NULL DEFAULT ''"] as $col => $def) {
+    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''", 'balance' => 'REAL', 'credential_id' => 'INTEGER', 'cost_note' => "TEXT NOT NULL DEFAULT ''", 'cost_breakdown' => 'TEXT'] as $col => $def) {
         if (!in_array($col, $projCols, true)) {
             $pdo->exec("ALTER TABLE projects ADD COLUMN $col $def");
         }
@@ -1830,8 +1831,9 @@ function fetch_project_cost(int $gid, array $project): array
         default:
             throw new RuntimeException('この箱のコスト種別が未設定です。編集でコスト種別（OpenAI / Twilio 等）を選んでください。');
     }
-    db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, balance = COALESCE(:bal, balance), cost_note = :note, updated_at = :u WHERE id = :id AND group_id = :g')
-        ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':bal' => $balance, ':note' => (string) ($c['note'] ?? ''), ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
+    $breakdown = (isset($c['breakdown']) && $c['breakdown']) ? json_encode($c['breakdown'], JSON_UNESCAPED_UNICODE) : null;
+    db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, balance = COALESCE(:bal, balance), cost_note = :note, cost_breakdown = :bd, updated_at = :u WHERE id = :id AND group_id = :g')
+        ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':bal' => $balance, ':note' => (string) ($c['note'] ?? ''), ':bd' => $breakdown, ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
     // 当月スナップショットに記録（推移・前月比用）
     $project['monthly_cost'] = $c['amount']; $project['currency'] = $c['currency'];
     snapshot_box($gid, $project);
@@ -1974,9 +1976,11 @@ function cost_gcp_bq(string $saJson, string $table): array
     }
     $token = gcp_access_token($saJson);
     $monthStart = gmdate('Y-m-01');
-    $sql = "SELECT currency AS cur, SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net "
+    // サービス別×通貨で集計（合計と内訳を1クエリで取得）
+    $sql = "SELECT service.description AS svc, currency AS cur, "
+         . "SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net "
          . "FROM `{$table}` WHERE usage_start_time >= TIMESTAMP('{$monthStart} 00:00:00 UTC') "
-         . "GROUP BY currency ORDER BY net DESC";
+         . "GROUP BY svc, cur ORDER BY net DESC";
     $url = 'https://bigquery.googleapis.com/bigquery/v2/projects/' . rawurlencode($project) . '/queries';
     $r = http_request('POST', $url, [
         'headers' => ['Authorization: Bearer ' . $token, 'Content-Type: application/json'],
@@ -1987,9 +1991,31 @@ function cost_gcp_bq(string $saJson, string $table): array
     if (!($d['jobComplete'] ?? false)) { throw new RuntimeException('BigQueryジョブが時間内に完了しませんでした。'); }
     $rows = $d['rows'] ?? [];
     if (!$rows) { return ['amount' => 0.0, 'currency' => 'JPY', 'note' => 'GCP: 当月データなし']; }
-    $cur = strtoupper((string) ($rows[0]['f'][0]['v'] ?? 'JPY')) ?: 'JPY';
-    $net = (float) ($rows[0]['f'][1]['v'] ?? 0);
-    return ['amount' => round(max(0.0, $net), 2), 'currency' => $cur, 'note' => 'GCP: BigQuery集計'];
+    // 通貨ごとの合計を出し、最も大きい通貨を代表として採用
+    $byCur = [];
+    foreach ($rows as $row) {
+        $cur = strtoupper((string) ($row['f'][1]['v'] ?? 'JPY')) ?: 'JPY';
+        $byCur[$cur] = ($byCur[$cur] ?? 0) + (float) ($row['f'][2]['v'] ?? 0);
+    }
+    arsort($byCur);
+    $topCur = (string) array_key_first($byCur);
+    // 代表通貨のサービス別内訳（金額が出ているものだけ、上位12件）
+    $breakdown = [];
+    foreach ($rows as $row) {
+        $cur = strtoupper((string) ($row['f'][1]['v'] ?? 'JPY')) ?: 'JPY';
+        if ($cur !== $topCur) { continue; }
+        $svc = trim((string) ($row['f'][0]['v'] ?? '')) ?: '(その他)';
+        $net = round((float) ($row['f'][2]['v'] ?? 0), 2);
+        if ($net <= 0) { continue; }
+        $breakdown[] = ['service' => $svc, 'amount' => $net];
+    }
+    usort($breakdown, static fn($a, $b) => $b['amount'] <=> $a['amount']);
+    if (count($breakdown) > 12) {
+        $rest = array_sum(array_map(static fn($x) => $x['amount'], array_slice($breakdown, 12)));
+        $breakdown = array_slice($breakdown, 0, 12);
+        if ($rest > 0) { $breakdown[] = ['service' => 'その他', 'amount' => round($rest, 2)]; }
+    }
+    return ['amount' => round(max(0.0, (float) $byCur[$topCur]), 2), 'currency' => $topCur, 'note' => 'GCP: BigQuery集計', 'breakdown' => $breakdown];
 }
 
 

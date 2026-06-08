@@ -2364,6 +2364,38 @@ if ($route === 'product'):
     </div>
     <?php endif; ?>
 
+    <?php
+    // コスト内訳（サービス別）：配下の箱の cost_breakdown を集計（GCP BigQuery等）
+    $gcpBreakdown = [];
+    $gcpCur = '';
+    foreach ($pboxes as $b) {
+        if (empty($b['cost_breakdown'])) { continue; }
+        $arr = json_decode((string) $b['cost_breakdown'], true);
+        if (!is_array($arr)) { continue; }
+        $gcpCur = $gcpCur ?: ($b['currency'] ?: 'JPY');
+        foreach ($arr as $it) {
+            $svc = (string) ($it['service'] ?? '');
+            if ($svc === '') { continue; }
+            $gcpBreakdown[$svc] = ($gcpBreakdown[$svc] ?? 0) + (float) ($it['amount'] ?? 0);
+        }
+    }
+    arsort($gcpBreakdown);
+    $gcpBdMax = $gcpBreakdown ? max($gcpBreakdown) : 1;
+    ?>
+    <?php if ($gcpBreakdown): ?>
+    <!-- コスト内訳（サービス別） -->
+    <div class="panel compact-bars" style="margin-bottom:18px">
+        <h3>コスト内訳（サービス別・当月）</h3>
+        <?php $dc = donut_colors(); $i = 0; foreach ($gcpBreakdown as $svc => $amt): ?>
+            <div class="bar-row">
+                <span class="nm"><?= h($svc) ?></span>
+                <span class="bar-track"><span class="bar-fill" style="width:<?= round($amt / $gcpBdMax * 100, 1) ?>%;background:<?= h($dc[$i % count($dc)]) ?>"></span></span>
+                <span class="v"><?= h($gcpCur) ?> <?= number_format($amt, (fmod($amt, 1.0) === 0.0) ? 0 : 2) ?></span>
+            </div>
+        <?php $i++; endforeach; ?>
+    </div>
+    <?php endif; ?>
+
     <?php if ($editable && $papis): ?>
     <!-- API情報（登録項目の編集） -->
     <div class="panel" style="margin-bottom:18px">
