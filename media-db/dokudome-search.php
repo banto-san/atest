@@ -57,10 +57,10 @@ if ($name === '' && $phone === '') {
     dd_out(400, ['error' => 'no_query', 'message' => '会社名または電話番号を入力してください。']);
 }
 
-// 除外ドメイン（既定の定番＋ユーザー設定）
+// 除外ドメイン（既定の定番＋Excel由来の大量リスト＋ユーザー設定）。サフィックス/ラベルで照合。
 $data        = load_data();
 $userExclude = array_map('strval', $data['excludeDomains'] ?? []);
-$exclude     = dd_exclude_list($userExclude);
+[$domSet, $kwSet] = dd_build_exclude_sets($userExclude);
 
 // プロンプト（公式サイト＝独自ドメインを1つだけ）
 $lines = ["会社名: {$name}"];
@@ -125,7 +125,7 @@ foreach ($candidates as $u) {
     if ($host === '' || !dd_valid_domain($host)) {
         continue;
     }
-    if (dd_is_excluded($host, $exclude)) {
+    if (dd_is_excluded($host, $domSet, $kwSet)) {
         continue;
     }
     if (!isset($filtered[$host])) {
@@ -145,36 +145,77 @@ dd_out(200, ['found' => true, 'url' => $official, 'domain' => dd_host($official)
 
 /* ============================ helpers ============================ */
 
-/** 既定の除外ドメイン（定番の媒体）＋ユーザー設定を結合して返す */
-function dd_exclude_list(array $userExtra): array
+/** 既定の定番除外ドメイン（parentレベル）。サブドメインもサフィックス一致で除外する。 */
+function dd_builtin_domains(): array
 {
-    $base = [
+    return [
         // SNS・ブログ
         'facebook.com', 'fb.com', 'instagram.com', 'twitter.com', 'x.com', 'tiktok.com',
         'youtube.com', 'youtu.be', 'linkedin.com', 'pinterest.com', 'threads.net',
         'line.me', 'lin.ee', 'note.com', 'ameblo.jp', 'ameba.jp', 'hatenablog.com',
-        'hatena.ne.jp', 'blogspot.com', 'livedoor.jp', 'livedoor.blog',
+        'hatena.ne.jp', 'blogspot.com', 'livedoor.jp', 'livedoor.blog', 'jugem.jp',
+        'seesaa.net', 'webry.info', 'cocolog-nifty.com', 'exblog.jp', 'goo.ne.jp',
         // 予約・グルメ・美容
         'hotpepper.jp', 'tabelog.com', 'gnavi.co.jp', 'retty.me', 'ikyu.com', 'jalan.net',
         'rakuten.co.jp', 'owst.jp', 'foodre.jp', 'hitosara.com', 'ozmall.co.jp', 'epark.jp',
-        'minimo.jp', 'beauty-navi.com', 'rakuten-beauty.com',
+        'minimo.jp',
         // 地図・ポータル・口コミ
-        'google.com', 'google.co.jp', 'goo.gl', 'goo.ne.jp', 'yahoo.co.jp', 'navitime.co.jp',
+        'google.com', 'google.co.jp', 'goo.gl', 'yahoo.co.jp', 'navitime.co.jp',
         'mapion.co.jp', 'ekiten.jp', 'itp.ne.jp', 'its-mo.com', 'yelp.com', 'yelp.co.jp',
         // 求人
         'indeed.com', 'en-gage.net', 'mynavi.jp', 'rikunabi.com', 'doda.jp', 'baitoru.com',
         'townwork.net', 'stanby.com', 'wantedly.com', 'green-japan.com', 'type.jp',
-        'jobmedley.com', 'hellowork.mhlw.go.jp', 'itszai.jp',
-        // 無料HP作成・ECモール・ショップ作成
+        'jobmedley.com', 'itszai.jp',
+        // 無料HP作成・ISP/レンタル・ECモール（独自ドメインではない）
         'jimdo.com', 'jimdofree.com', 'wix.com', 'wixsite.com', 'web.fc2.com', 'fc2.com',
         'weebly.com', 'wordpress.com', 'goope.jp', 'shopinfo.jp', 'thebase.in', 'base.shop',
-        'stores.jp', 'myshopify.com',
+        'stores.jp', 'myshopify.com', 'sakura.ne.jp', 'so-net.ne.jp', 'ocn.ne.jp',
+        'coocan.jp', 'plala.or.jp', 'biglobe.ne.jp', 'xmbs.jp', 'jbplt.jp', 'main.jp',
+        'sub.jp', 'client.jp', 'skr.jp', 'ftw.jp', 'crayonsite.com', 'webcrow.jp',
         // 企業情報DB
         'baseconnect.in', 'salesnow.jp', 'houjin.jp', 'alarmbox.jp', 'mapfan.com',
     ];
-    $extra = array_map('dd_norm_domain', $userExtra);
-    $all   = array_merge($base, $extra);
-    return array_values(array_unique(array_filter($all, static fn($d) => $d !== '')));
+}
+
+/** 既定の定番除外キーワード（ホストのラベル一致で除外） */
+function dd_builtin_keywords(): array
+{
+    return ['hotpepper', 'tabelog', 'gnavi', 'ekiten', 'jimdo', 'wix', 'fc2', 'ameblo'];
+}
+
+/**
+ * 除外セットを構築：[ドメイン集合(サフィックス一致用), キーワード集合(ラベル一致用)]。
+ * 既定の定番＋Excel由来の大量リスト(exclude_domains.txt / exclude_keywords.txt)＋ユーザー設定を結合。
+ */
+function dd_build_exclude_sets(array $userExtra): array
+{
+    $domains = dd_builtin_domains();
+    $df = __DIR__ . '/exclude_domains.txt';   // Excel由来（任意）
+    if (is_file($df)) {
+        foreach (file($df, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            $d = dd_norm_domain($line);
+            if ($d !== '') {
+                $domains[] = $d;
+            }
+        }
+    }
+    foreach ($userExtra as $u) {   // 管理画面で追加した分
+        $d = dd_norm_domain((string) $u);
+        if ($d !== '') {
+            $domains[] = $d;
+        }
+    }
+    $keywords = dd_builtin_keywords();
+    $kf = __DIR__ . '/exclude_keywords.txt';
+    if (is_file($kf)) {
+        foreach (file($kf, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            $k = strtolower(trim($line));
+            if ($k !== '') {
+                $keywords[] = $k;
+            }
+        }
+    }
+    return [array_fill_keys($domains, true), array_fill_keys($keywords, true)];
 }
 
 /** 入力ドメイン文字列を正規化（http/パス/www を除去して小文字に） */
@@ -211,14 +252,21 @@ function dd_valid_domain(string $host): bool
     return (bool) preg_match('/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $host);
 }
 
-/** host が除外リストに該当するか（完全一致 or サブドメイン一致） */
-function dd_is_excluded(string $host, array $exclude): bool
+/** host が除外対象か。ドメインはサフィックス一致、キーワードはラベル一致で判定（高速）。 */
+function dd_is_excluded(string $host, array $domSet, array $kwSet): bool
 {
-    foreach ($exclude as $d) {
-        if ($d === '') {
-            continue;
+    $labels = explode('.', $host);
+    $n = count($labels);
+    // サフィックス一致（host 自身 〜 親ドメイン。TLD単独は対象外）
+    for ($i = 0; $i < $n - 1; $i++) {
+        $suffix = implode('.', array_slice($labels, $i));
+        if (isset($domSet[$suffix])) {
+            return true;
         }
-        if ($host === $d || str_ends_with($host, '.' . $d)) {
+    }
+    // ラベル一致（媒体名キーワード）
+    foreach ($labels as $L) {
+        if ($L !== '' && isset($kwSet[$L])) {
             return true;
         }
     }
