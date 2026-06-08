@@ -525,7 +525,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode($r);
             exit;
         }
-        flash('ok', sprintf('コストを一括更新しました（成功 %d / 失敗 %d / 対象外 %d）。', $r['ok'], $r['fail'], $r['skip']));
+        $msgAll = sprintf('コストを一括更新しました（成功 %d / 失敗 %d / 対象外 %d）。', $r['ok'], $r['fail'], $r['skip']);
+        if (!empty($r['errors'])) { $msgAll .= "\n失敗の理由:\n・" . implode("\n・", $r['errors']); }
+        flash(empty($r['errors']) ? 'ok' : 'err', $msgAll);
         redirect_self();
     }
 
@@ -534,7 +536,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prod = (string) ($_POST['product'] ?? '');
         if ($prod === '') { flash('err', 'プロダクトが指定されていません。'); redirect_self(); }
         $r = refresh_product_costs($gid, $prod);
-        flash('ok', sprintf('「%s」のコストを更新しました（成功 %d / 失敗 %d / 対象外 %d）。', $prod, $r['ok'], $r['fail'], $r['skip']));
+        $msg = sprintf('「%s」のコストを更新しました（成功 %d / 失敗 %d / 対象外 %d）。', $prod, $r['ok'], $r['fail'], $r['skip']);
+        if (!empty($r['errors'])) { $msg .= "\n失敗の理由:\n・" . implode("\n・", $r['errors']); }
+        flash(empty($r['errors']) ? 'ok' : 'err', $msg);
         redirect_self();
     }
 

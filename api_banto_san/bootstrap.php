@@ -1506,28 +1506,30 @@ function save_uploaded_logo(int $gid, string $product): ?string
     return app_base_url() . '/uploads/logos/' . $fname . '?v=' . time();
 }
 
-/** 全箱のコストを一括取得（解決できる箱のみ）。['ok','fail','skip'] を返す。 */
+/** 全箱のコストを一括取得（解決できる箱のみ）。['ok','fail','skip','errors'] を返す。 */
 function refresh_all_costs(int $gid): array
 {
-    $ok = $fail = $skip = 0;
+    $ok = $fail = $skip = 0; $errors = [];
     foreach (list_projects($gid) as $p) {
         if (resolve_cost_source($gid, $p) === null) { $skip++; continue; }
-        try { fetch_project_cost($gid, $p); $ok++; } catch (Throwable $e) { $fail++; }
+        try { fetch_project_cost($gid, $p); $ok++; }
+        catch (Throwable $e) { $fail++; $errors[] = '「' . (string) ($p['name'] ?? '') . '」: ' . $e->getMessage(); }
     }
     db()->prepare('UPDATE groups SET last_cost_refresh = :t WHERE id = :g')->execute([':t' => now(), ':g' => $gid]);
-    return ['ok' => $ok, 'fail' => $fail, 'skip' => $skip];
+    return ['ok' => $ok, 'fail' => $fail, 'skip' => $skip, 'errors' => $errors];
 }
 
-/** 指定プロダクト配下の箱だけコスト一括取得。['ok','fail','skip'] を返す。 */
+/** 指定プロダクト配下の箱だけコスト一括取得。['ok','fail','skip','errors'] を返す。 */
 function refresh_product_costs(int $gid, string $product): array
 {
-    $ok = $fail = $skip = 0;
+    $ok = $fail = $skip = 0; $errors = [];
     foreach (list_projects($gid) as $p) {
         if ((string) ($p['product'] ?? '') !== $product) { continue; }
         if (resolve_cost_source($gid, $p) === null) { $skip++; continue; }
-        try { fetch_project_cost($gid, $p); $ok++; } catch (Throwable $e) { $fail++; }
+        try { fetch_project_cost($gid, $p); $ok++; }
+        catch (Throwable $e) { $fail++; $errors[] = '「' . (string) ($p['name'] ?? '') . '」: ' . $e->getMessage(); }
     }
-    return ['ok' => $ok, 'fail' => $fail, 'skip' => $skip];
+    return ['ok' => $ok, 'fail' => $fail, 'skip' => $skip, 'errors' => $errors];
 }
 
 /** 最後の一括更新から $hours 時間以上経過しているか（自動更新の判定） */
