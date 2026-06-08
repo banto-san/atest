@@ -231,6 +231,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $key_location = trim((string) ($_POST['key_location'] ?? ''));
         $cost_project = trim((string) ($_POST['cost_project'] ?? ''));
         $site         = trim((string) ($_POST['site'] ?? ''));
+        $url          = trim((string) ($_POST['url'] ?? ''));
+        if ($url !== '' && !preg_match('#^https?://#i', $url)) { $url = 'https://' . $url; }
         $docs_url     = trim((string) ($_POST['docs_url'] ?? ''));
         $owner        = trim((string) ($_POST['owner'] ?? ''));
         $notes        = trim((string) ($_POST['notes'] ?? ''));
@@ -260,11 +262,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($id === null) {
             $stmt = $pdo->prepare(
-                'INSERT INTO apis (group_id, name, provider, site, status, monthly_cost, currency, billing_url, key_location, cost_project, docs_url, owner, notes, secret_enc, secret_hint, secret_fp, created_at, updated_at)
-                 VALUES (:gid,:name,:provider,:site,:status,:cost,:cur,:bill,:key,:cproj,:docs,:owner,:notes,:senc,:shint,:sfp,:ca,:ua)'
+                'INSERT INTO apis (group_id, name, provider, site, url, status, monthly_cost, currency, billing_url, key_location, cost_project, docs_url, owner, notes, secret_enc, secret_hint, secret_fp, created_at, updated_at)
+                 VALUES (:gid,:name,:provider,:site,:url,:status,:cost,:cur,:bill,:key,:cproj,:docs,:owner,:notes,:senc,:shint,:sfp,:ca,:ua)'
             );
             $stmt->execute([
-                ':gid'=>$gid, ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':status'=>$status, ':cost'=>$monthly_cost,
+                ':gid'=>$gid, ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':url'=>$url, ':status'=>$status, ':cost'=>$monthly_cost,
                 ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':cproj'=>$cost_project, ':docs'=>$docs_url,
                 ':owner'=>$owner, ':notes'=>$notes,
                 ':senc'=>$secretMode==='set'?$secretEnc:null, ':shint'=>$secretMode==='set'?$secretHint:null, ':sfp'=>$secretMode==='set'?$secretFp:null,
@@ -274,13 +276,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // 現在グループに属する行のみ更新可（横断アクセス防止）
             $stmt = $pdo->prepare(
-                'UPDATE apis SET name=:name, provider=:provider, site=:site, status=:status, monthly_cost=:cost,
+                'UPDATE apis SET name=:name, provider=:provider, site=:site, url=:url, status=:status, monthly_cost=:cost,
                      currency=:cur, billing_url=:bill, key_location=:key, cost_project=:cproj, docs_url=:docs,
                      owner=:owner, notes=:notes, updated_at=:ua
                  WHERE id=:id AND group_id=:gid'
             );
             $stmt->execute([
-                ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':status'=>$status, ':cost'=>$monthly_cost,
+                ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':url'=>$url, ':status'=>$status, ':cost'=>$monthly_cost,
                 ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':cproj'=>$cost_project, ':docs'=>$docs_url,
                 ':owner'=>$owner, ':notes'=>$notes, ':ua'=>now(), ':id'=>$id, ':gid'=>$gid,
             ]);
@@ -1317,7 +1319,8 @@ function render_modals(string $csrf, array $names, array $credentials): void
             <div class="grid">
                 <div class="field"><label>API名 <span style="color:#b42318">*</span></label><input name="name" id="f_name" required placeholder="例: OpenAI API"></div>
                 <div class="field"><label>provider</label><input name="provider" id="f_provider" placeholder="例: OpenAI / Stripe / Google"></div>
-                <div class="field"><label>サイト (site)</label><input name="site" id="f_site" placeholder="例: s-benri / drive-py"><div class="hint">どのサイト/プロジェクトで使うキーか。空欄も可。</div></div>
+                <div class="field"><label>URL（使う画面・サービス）</label><input name="url" id="f_url" type="text" oninput="deriveSiteFromUrl()" placeholder="https://manager.line.biz/ など"><div class="hint">入力するとサイト名(ドメイン)を自動表示します。</div></div>
+                <div class="field"><label>サイト (site)</label><input name="site" id="f_site" placeholder="URLから自動／手入力も可"><div class="hint">URLのドメインから自動表示。手で書き換えもOK。</div></div>
                 <div class="field"><label>月額（空欄＝未設定）</label><input name="monthly_cost" id="f_cost" type="number" step="0.01" min="0" placeholder="例: 12000"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label>status</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
@@ -1511,7 +1514,7 @@ function render_modals(string $csrf, array $names, array $credentials): void
     function openCreate() {
         document.getElementById('modalTitle').textContent = 'API を追加';
         document.getElementById('f_id').value = '';
-        for (const f of ['name','provider','site','cost','owner','key','billing','docs','notes','secret','cost_project']) {
+        for (const f of ['name','provider','site','url','cost','owner','key','billing','docs','notes','secret','cost_project']) {
             const el = document.getElementById('f_' + f); if (el) el.value = '';
         }
         document.getElementById('f_currency').value = 'JPY';
@@ -1529,12 +1532,20 @@ function render_modals(string $csrf, array $names, array $credentials): void
         document.getElementById('sub_currency').value = 'JPY';
         d.showModal();
     }
+    // URL を入れたら（サイトが空のときだけ）ドメインをサイト名として自動表示
+    function deriveSiteFromUrl() {
+        const u = document.getElementById('f_url').value.trim();
+        const s = document.getElementById('f_site');
+        if (!u || s.value.trim() !== '') { return; }
+        try { s.value = new URL(/^https?:\/\//i.test(u) ? u : 'https://' + u).hostname; } catch (e) {}
+    }
     function openEdit(a) {
         document.getElementById('modalTitle').textContent = 'API を編集';
         document.getElementById('f_id').value      = a.id ?? '';
         document.getElementById('f_name').value     = a.name ?? '';
         document.getElementById('f_provider').value = a.provider ?? '';
         document.getElementById('f_site').value     = a.site ?? '';
+        document.getElementById('f_url').value      = a.url ?? '';
         document.getElementById('f_cost').value     = (a.monthly_cost === null || a.monthly_cost === undefined) ? '' : a.monthly_cost;
         document.getElementById('f_currency').value = a.currency ?? 'JPY';
         document.getElementById('f_status').value   = a.status ?? 'unknown';
@@ -2365,9 +2376,9 @@ if ($route === 'product'):
                 <tr>
                     <td><span style="display:inline-flex;align-items:center;gap:8px"><?= provider_badge($ap['name'], 24, $prodMeta[$pname]['logo_color'] ?? null, $prodMeta[$pname]['logo_url'] ?? null) ?> <strong><?= h($ap['name']) ?></strong></span></td>
                     <td><?= h($ap['provider']) ?: '<span class="muted">未設定</span>' ?></td>
-                    <td><?= h($ap['site']) ?: '<span class="muted">—</span>' ?></td>
+                    <td><?= h($ap['site']) ?: '<span class="muted">—</span>' ?><?php if (trim((string) ($ap['url'] ?? '')) !== ''): ?><br><a href="<?= h($ap['url']) ?>" target="_blank" rel="noopener" class="product-link" style="font-size:12px"><?= icon('right', 12) ?> <?= h($ap['url']) ?></a><?php endif; ?></td>
                     <td class="cost"><?= fmt_money($ap['monthly_cost'] === null ? null : (float) $ap['monthly_cost'], $ap['currency'] ?: 'JPY') ?></td>
-                    <td style="white-space:nowrap"><button class="link" type="button" onclick='openEdit(<?= htmlspecialchars(json_encode(["id"=>(int)$ap["id"],"name"=>$ap["name"],"provider"=>$ap["provider"],"site"=>$ap["site"],"monthly_cost"=>$ap["monthly_cost"],"currency"=>$ap["currency"],"status"=>$ap["status"],"owner"=>$ap["owner"],"key_location"=>$ap["key_location"],"billing_url"=>$ap["billing_url"],"docs_url"=>$ap["docs_url"],"notes"=>$ap["notes"],"cost_project"=>$ap["cost_project"] ?? "","secret_hint"=>$ap["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)'><?= icon('gear', 14) ?> 編集</button></td>
+                    <td style="white-space:nowrap"><button class="link" type="button" onclick='openEdit(<?= htmlspecialchars(json_encode(["id"=>(int)$ap["id"],"name"=>$ap["name"],"provider"=>$ap["provider"],"site"=>$ap["site"],"url"=>$ap["url"] ?? "","monthly_cost"=>$ap["monthly_cost"],"currency"=>$ap["currency"],"status"=>$ap["status"],"owner"=>$ap["owner"],"key_location"=>$ap["key_location"],"billing_url"=>$ap["billing_url"],"docs_url"=>$ap["docs_url"],"notes"=>$ap["notes"],"cost_project"=>$ap["cost_project"] ?? "","secret_hint"=>$ap["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)'><?= icon('gear', 14) ?> 編集</button></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>

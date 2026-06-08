@@ -819,6 +819,7 @@ function db(): PDO
             name          TEXT    NOT NULL,
             provider      TEXT    NOT NULL DEFAULT '',
             site          TEXT    NOT NULL DEFAULT '',
+            url           TEXT    NOT NULL DEFAULT '',
             status        TEXT    NOT NULL DEFAULT 'unknown',
             monthly_cost  REAL,
             currency      TEXT    NOT NULL DEFAULT 'JPY',
@@ -1003,7 +1004,7 @@ function db(): PDO
     // キー暗号化保存: secret_enc(暗号文) / secret_hint(伏字) / secret_fp(指紋)
     // コスト取得用のプロジェクトID(cost_project): 空なら組織全体、指定で按分
     $apiCols = array_column($pdo->query('PRAGMA table_info(apis)')->fetchAll(), 'name');
-    foreach (['secret_enc' => 'TEXT', 'secret_hint' => 'TEXT', 'secret_fp' => 'TEXT', 'cost_project' => 'TEXT'] as $col => $type) {
+    foreach (['secret_enc' => 'TEXT', 'secret_hint' => 'TEXT', 'secret_fp' => 'TEXT', 'cost_project' => 'TEXT', 'url' => "TEXT NOT NULL DEFAULT ''"] as $col => $type) {
         if (!in_array($col, $apiCols, true)) {
             $pdo->exec("ALTER TABLE apis ADD COLUMN $col $type");
         }
