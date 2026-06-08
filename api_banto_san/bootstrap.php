@@ -2131,28 +2131,30 @@ function cost_openai(string $key, ?string $projectId = null): array
         throw new RuntimeException('OpenAIのコスト取得には組織の Admin キー(sk-admin-...) が必要です。通常のAPIキーでは取得できません（OpenAIの組織設定で発行してください）。');
     }
     if ($r['status'] !== 200) {
-        throw new RuntimeException('OpenAI コストAPIエラー (HTTP ' . $r['status'] . ')。' . ($r['error'] ?? ''));
+        throw new RuntimeException('OpenAI コストAPIエラー (HTTP ' . $r['status'] . ')。' . trim(($r['error'] ?? '') . ' ' . substr((string) $r['body'], 0, 200)));
     }
     $d = json_decode($r['body'], true);
     $sum = 0.0;
     $cur = 'USD';
-    $matched = 0;   // プロジェクト指定時、該当結果が見つかった数
+    $filtered = ($projectId !== null && $projectId !== '');
+    $rows = 0;   // 集計対象になった結果行の数
     foreach (($d['data'] ?? []) as $bucket) {
         foreach (($bucket['results'] ?? []) as $res) {
-            if ($projectId !== null && $projectId !== '') {
-                if (($res['project_id'] ?? null) !== $projectId) {
-                    continue;   // 指定プロジェクト以外は除外
-                }
-                $matched++;
+            // project_ids でサーバ側フィルタ済み。group_by の結果に project_id があり、
+            // かつ別IDのときだけ除外する（project_id が返らない形でも取りこぼさない）。
+            if ($filtered && isset($res['project_id']) && (string) $res['project_id'] !== $projectId) {
+                continue;
             }
+            $rows++;
             $sum += (float) ($res['amount']['value'] ?? 0);
             if (!empty($res['amount']['currency'])) {
                 $cur = strtoupper((string) $res['amount']['currency']);
             }
         }
     }
-    if ($projectId !== null && $projectId !== '' && $matched === 0) {
-        throw new RuntimeException('プロジェクト「' . $projectId . '」のコストが取得できませんでした。プロジェクトIDが正しいか、当月に課金があるかご確認ください。');
+    // 該当データ0件＝当月まだ課金が無いケースが大半。失敗にせず ¥0（注記つき）で扱う。
+    if ($filtered && $rows === 0) {
+        return ['amount' => 0.0, 'currency' => $cur, 'note' => '当月の課金なし（または未反映）'];
     }
     return ['amount' => round($sum, 2), 'currency' => $cur];
 }
