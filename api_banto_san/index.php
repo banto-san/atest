@@ -1372,8 +1372,9 @@ function render_modals(string $csrf, array $names, array $credentials): void
                 <div class="field"><label>担当 (owner)</label><input name="owner" id="f_owner" placeholder="例: 開発チーム"></div>
                 <div class="field full"><label>鍵の在りか (key_location)</label><input name="key_location" id="f_key" placeholder="例: env: OPENAI_API_KEY"><div class="hint">環境変数名など「在りか」。下の「APIキー(値)」とは別です。</div></div>
                 <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
-                    <label><?= icon('lock', 15) ?> APIキー（値）— コスト自動取得用</label>
+                    <label><?= icon('lock', 15) ?> APIキー（値）— 任意（主にOpenAIの保険用）</label>
                     <input type="password" name="secret" id="f_secret" autocomplete="new-password" placeholder="ここにキーの値を貼る（暗号化保存）">
+                    <div class="hint" style="background:#fff4e0;color:#92400e;padding:7px 10px;border-radius:8px;white-space:normal">⚠ <strong>コストの自動取得はこの欄ではできません</strong>（OpenAIの保険用途のみ）。Claude/Anthropic 等のコスト取得は「<strong>コスト取得キー</strong>」を作って箱／プロダクトに割り当てるか、<strong>箱の編集</strong>でキーを設定してください。</div>
                     <div class="hint" id="f_secret_state"></div>
                     <label style="font-weight:400;font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-top:4px">
                         <input type="checkbox" name="secret_clear" id="f_secret_clear" value="1" style="width:auto"> 保存済みのキーを削除する
@@ -1475,6 +1476,7 @@ function render_modals(string $csrf, array $names, array $credentials): void
                     </select>
                     <div class="hint">各種別で必要な項目・取得場所は <a href="<?= h(app_url('guide')) ?>" target="_blank">キーの取得ガイド</a> を参照。</div>
                 </div>
+                <div class="field full" id="cf_guide_wrap" style="display:none"><div id="cf_guide" style="background:#eef4ff;color:#1d4ed8;padding:9px 11px;border-radius:8px;white-space:normal;line-height:1.55;font-size:13px"></div></div>
                 <div class="field full" id="cf_acct_wrap" style="display:none"><label id="cf_acct_label">アカウントID</label><input name="cost_account" id="cf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
                 <div class="field full" id="cf_proj_wrap"><label>OpenAI プロジェクトID（既定・任意）</label><input name="openai_project_id" id="cf_proj" placeholder="proj_xxxxx（空＝組織全体）"><div class="hint">箱側で個別指定があればそちらが優先されます。</div></div>
                 <div class="field full" id="cf_secret_wrap"><label><?= icon('lock', 15) ?> キー / トークン（暗号化保存）</label><input type="password" name="secret" id="cf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="cf_secret_state"></div></div>
@@ -1529,8 +1531,16 @@ function render_modals(string $csrf, array $names, array $credentials): void
         document.getElementById('pf_currency').value = p.currency || 'USD';
         projDialog.showModal();
     }
+    const CRED_GUIDE = <?= json_encode(cred_guide_map(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     function cfTypeChange() {
         const t = document.getElementById('cf_cost_type').value;
+        // 選んだ種別の「どの欄に何を入れる／取得元」をその場に表示
+        const gw = document.getElementById('cf_guide_wrap'), gd = document.getElementById('cf_guide'), g = CRED_GUIDE[t];
+        if (g) {
+            gd.textContent = '入力ガイド： ' + g.needs;
+            if (g.url) { const a = document.createElement('a'); a.href = g.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = ' ▶ ' + (g.title || '公式ページで取得'); a.style.color = '#1d4ed8'; a.style.fontWeight = '600'; gd.appendChild(document.createElement('br')); gd.appendChild(a); }
+            gw.style.display = '';
+        } else { gw.style.display = 'none'; }
         const acctTypes = { twilio:'Twilio Account SID', vonage:'Vonage API Key', dataforseo:'DataForSEO ログイン（メール）', gcp_bq:'BigQuery テーブル（project.dataset.table）' };
         document.getElementById('cf_proj_wrap').style.display = (t === 'openai' || t === '') ? '' : 'none';
         document.getElementById('cf_acct_wrap').style.display = acctTypes[t] ? '' : 'none';

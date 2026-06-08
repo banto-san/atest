@@ -1600,6 +1600,24 @@ function default_guides(): array
     ];
 }
 
+/**
+ * コスト種別(cost_type) → 入力ガイド（どの欄に何を入れるか＋取得元URL）。
+ * 既定ガイド（静的・信頼できる文言）から作り、キー入力モーダルにその場で表示する用。
+ */
+function cred_guide_map(): array
+{
+    $g = default_guides();
+    $alias = ['gcp_bq' => 'google'];   // セレクトの値→ガイドキーの読み替え
+    $map = [];
+    foreach (['openai', 'anthropic', 'twilio', 'dataforseo', 'vonage', 'serpapi', 'gcp_bq'] as $type) {
+        $key = $alias[$type] ?? $type;
+        if (isset($g[$key])) {
+            $map[$type] = ['needs' => $g[$key]['needs'], 'url' => $g[$key]['url'], 'title' => $g[$key]['title']];
+        }
+    }
+    return $map;
+}
+
 /** ガイド一覧（既定＋グループの上書きをマージ。custom=既定に無い独自項目） */
 function list_guides(int $gid): array
 {
