@@ -1360,8 +1360,8 @@ function render_modals(string $csrf, array $names, array $credentials): void
             <div class="grid">
                 <div class="field"><label>API名 <span style="color:#b42318">*</span></label><input name="name" id="f_name" required placeholder="例: OpenAI API"></div>
                 <div class="field"><label>provider</label><input name="provider" id="f_provider" placeholder="例: OpenAI / Stripe / Google"></div>
-                <div class="field"><label>サービスURL（管理画面・ログイン画面など）</label><input name="url" id="f_url" type="text" oninput="deriveSiteFromUrl()" placeholder="https://manager.line.biz/ など"><div class="hint">そのサービス自体のページ（管理画面・ログイン画面など）。<strong>コードのどこでキーを使っているか（＝詳細の「使用箇所」）とは別物</strong>です。入力するとサイト名(ドメイン)を自動表示します。</div></div>
-                <div class="field"><label>サイト名（このAPIの分類・任意）</label><input name="site" id="f_site" placeholder="URLから自動／手入力も可"><div class="hint">このAPIをまとめるための名前（上のドメインから自動表示／手入力もOK）。コードの使用箇所とは無関係の、任意の分類用ラベルです。</div></div>
+                <div class="field"><label>サービスURL（管理画面・ログイン画面など）</label><input name="url" id="f_url" type="text" oninput="deriveSiteFromUrl()" placeholder="https://manager.line.biz/ など"><div class="hint">そのサービス自体のページ（管理画面・ログイン画面など）。<strong>コードのどこでキーを使っているか（＝詳細の「使用箇所」）とは別物</strong>です。入力すると下の「ドメイン／サービス」欄にドメインを自動表示します。</div></div>
+                <div class="field"><label>ドメイン／サービス（任意）</label><input name="site" id="f_site" placeholder="URLから自動／手入力も可"><div class="hint">このAPI自体のサービス（上のドメインから自動表示／手入力もOK）。コードの使用箇所とは無関係です。</div></div>
                 <div class="field"><label>月額（空欄＝未設定）</label><input name="monthly_cost" id="f_cost" type="number" step="0.01" min="0" placeholder="例: 12000"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label>status</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
@@ -2463,9 +2463,9 @@ if ($route === 'product'):
     <!-- API情報（登録項目の編集） -->
     <div class="panel" style="margin-bottom:18px">
         <h3 style="display:flex;align-items:center;gap:8px"><?= icon('product', 16) ?> API情報（プロバイダー等）</h3>
-        <p class="hint" style="margin:0 0 10px">登録時に入れた項目（プロバイダー・サイト・月額・担当者・各種URL・メモ）はここから後から修正できます。</p>
+        <p class="hint" style="margin:0 0 10px">登録時に入れた項目（プロバイダー・ドメイン／サービス・月額・担当者・各種URL・メモ）はここから後から修正できます。<br>※「ドメイン／サービス」はこのAPI自体のサービス（URLのドメイン）で、コードの使用箇所とは別です。</p>
         <table>
-            <thead><tr><th>API名</th><th>プロバイダー</th><th>サイト</th><th>月額</th><th></th></tr></thead>
+            <thead><tr><th>API名</th><th>プロバイダー</th><th>ドメイン／サービス</th><th>月額</th><th></th></tr></thead>
             <tbody>
             <?php foreach ($papis as $ap): ?>
                 <tr>
