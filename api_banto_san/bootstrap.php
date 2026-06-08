@@ -2130,6 +2130,10 @@ function cost_openai(string $key, ?string $projectId = null): array
     if ($r['status'] === 401 || $r['status'] === 403) {
         throw new RuntimeException('OpenAIのコスト取得には組織の Admin キー(sk-admin-...) が必要です。通常のAPIキーでは取得できません（OpenAIの組織設定で発行してください）。');
     }
+    // プロジェクトID不正（typo・削除済み・別組織のID等）は分かりやすい日本語で案内。
+    if ($r['status'] === 400 && $projectId !== null && $projectId !== '' && stripos((string) $r['body'], 'project_id') !== false) {
+        throw new RuntimeException('この箱の「識別子(プロジェクトID)」' . $projectId . ' はこの組織に存在しません。箱の編集で正しいIDに直すか、空欄にしてください（空欄＝組織全体の合計を取得）。');
+    }
     if ($r['status'] !== 200) {
         throw new RuntimeException('OpenAI コストAPIエラー (HTTP ' . $r['status'] . ')。' . trim(($r['error'] ?? '') . ' ' . substr((string) $r['body'], 0, 200)));
     }
