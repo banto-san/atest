@@ -201,7 +201,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <span style="font-size:8.5pt;">　担当者／相談先：<span class="fill">【要記入：名前・チャット など】</span></span>
   </div>
 
-  <div class="footer">1 / 10</div>
+  <div class="footer">1 / 11</div>
 </section>
 
 <!-- ============ PAGE 2 : 全体像 ============ -->
@@ -251,7 +251,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <b>🔑 いちばん大事な一言：</b> あなたは基本的に <b>Claude Code に「言葉でお願いする」だけ</b>。GitHub への保存や heteml への公開は、ほとんど<b>自動</b>で進みます。仕組みは次ページ以降でゆっくり説明します。
   </div>
 
-  <div class="footer">2 / 10</div>
+  <div class="footer">2 / 11</div>
 </section>
 
 <!-- ============ PAGE 3 : 用語集 ============ -->
@@ -283,7 +283,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
 
   <div class="tip"><b>🧭 覚え方のコツ：</b> 「<b>コミット＝セーブ</b>」「<b>プッシュ＝クラウドに送る</b>」「<b>main＝公開スイッチ</b>」。この3つだけ頭に入れておけば、まずは大丈夫です。</div>
 
-  <div class="footer">3 / 10</div>
+  <div class="footer">3 / 11</div>
 </section>
 
 <!-- ============ PAGE 4 : セットアップ STEP1 ============ -->
@@ -317,7 +317,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <p>チームの倉庫（リポジトリ）<b>「qc」は非公開</b>です。あなたを中に入れる（招待する）には、<b>あなたのGitHubユーザー名（またはメール）が必ず必要</b>になります。名前を伝えないと、担当者は招待を送れません。</p>
   </div>
 
-  <div class="footer">4 / 10</div>
+  <div class="footer">4 / 11</div>
 </section>
 
 <!-- ============ PAGE 5 : セットアップ STEP2 ============ -->
@@ -367,7 +367,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
 
   <div class="alert-info" style="margin-top:8px;">📩 メールが見当たらないときは、<b>迷惑メールフォルダ</b>を確認してください。それでも無ければ担当者へ。招待リンクには<b>有効期限（数日〜7日程度）</b>がある場合があるので、届いたら早めに承認しましょう。</div>
 
-  <div class="footer">5 / 10</div>
+  <div class="footer">5 / 11</div>
 </section>
 
 <!-- ============ PAGE 6 : セットアップ STEP3-4 ============ -->
@@ -405,7 +405,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <p style="font-size:9pt;margin:0;">ここから先は、いよいよ実際にサイトを作っていきます。<br>ここまでの設定は<b>最初の1回だけ</b>。次回からはすぐ作業に入れます。</p>
   </div>
 
-  <div class="footer">6 / 10</div>
+  <div class="footer">6 / 11</div>
 </section>
 
 <!-- ============ PAGE 7 : フォルダ構成と自分のフォルダ ============ -->
@@ -441,7 +441,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <b>原則：「自分のフォルダの中」だけを編集する。他人のフォルダ・<span style="font-family:monospace;">.github</span>・README などはさわらない。</b>不要そうに見えても、消す前に必ず相談してください。
   </div>
 
-  <div class="footer">7 / 10</div>
+  <div class="footer">7 / 11</div>
 </section>
 
 <!-- ============ PAGE 8 : サイトを作る流れ ============ -->
@@ -469,15 +469,27 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
 
   <div class="alert-info"><b>🔎 公開後の確認：</b>自分のサイトのURLは <span style="font-family:monospace;">https://<span class="fill">【要記入：heteml公開URL】</span>/qc/◯◯◯（自分のフォルダ名）/</span> のような形になります。正しい公開URLは担当者に確認してください。</div>
 
-  <div class="footer">8 / 10</div>
+  <div class="footer">8 / 11</div>
 </section>
 
-<!-- ============ PAGE 9 : heteml連携の仕組み ============ -->
+<!-- ============ PAGE 9 : heteml公開の仕組み（自動公開） ============ -->
 <section class="page">
-  <div class="header"><span>スタートアップガイド</span><span>heteml連携の仕組み（自動公開と手動アップ）</span></div>
+  <div class="header"><span>スタートアップガイド</span><span>heteml公開の仕組み（自動公開）</span></div>
 
-  <h1>6. なぜ「自動で heteml が更新」されるのか</h1>
-  <p class="lead">「Claude Code が勝手に heteml を更新してくれる」と聞くと不思議ですが、裏では <b>GitHub の自動係（GitHub Actions）</b>が働いています。仕組みを知っておくと安心です。</p>
+  <h1>6. heteml への公開は「誰が」やっている？</h1>
+
+  <div class="highlight-box" style="margin-top:10px;padding:12px 15px;">
+    <div style="font-size:9pt;margin-bottom:8px;">
+      <span style="font-weight:900;color:var(--primary-color);">Q1. heteml へのアップは Claude Code がやってくれるの？</span><br>
+      <b>A.「Claude Code が直接アップ」ではありません。</b>Claude Code の担当は <b>コードを書いて GitHub に保存（push）する</b>ところまでです。heteml への<b>実際のアップロードは、その変更が本番（main）に入った瞬間に、GitHub の自動係「GitHub Actions」が自動で</b>行います。だから“勝手に上がる”ように見えるのです。
+    </div>
+    <div style="font-size:9pt;border-top:1px dashed #cbd5e1;padding-top:8px;">
+      <span style="font-weight:900;color:var(--primary-color);">Q2. 何か設定は必要？</span><br>
+      <b>A. あなたが行う設定はありません（P.4〜6 の STEP1〜4 が済んでいればOK）。</b>自動アップの仕組みは、<b>最初に一度だけ</b>用意する <span style="font-family:monospace;">deploy.yml</span> と <b>heteml の接続情報（GitHub の Secrets）</b>で動きます。<span style="background:#dcfce7;color:#166534;font-weight:bold;padding:1px 6px;border-radius:3px;">このチームは設定済み</span>なので、ふだんは意識せずそのまま使えます。
+    </div>
+  </div>
+
+  <p class="lead" style="margin-top:12px;">公開までの流れは、裏で <b>GitHub の自動係（GitHub Actions）</b> がこの順番で動いています。↓</p>
 
   <div class="flow-container">
     <div class="flow-step"><div class="flow-badge">きっかけ</div><div class="flow-ico">📦</div><div class="flow-title">main が更新される</div><div class="flow-desc">あなたの変更が本番ブランチに入る</div></div>
@@ -488,9 +500,16 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     <div class="flow-arrow">➜</div>
     <div class="flow-step" style="border-color:#0284c7;"><div class="flow-badge" style="background:#0284c7;">公開</div><div class="flow-ico">🌐</div><div class="flow-title" style="color:#0284c7;">heteml に配置</div><div class="flow-desc">/web/qc/ に置かれ公開</div></div>
   </div>
-  <p style="font-size:8pt;color:#64748b;text-align:center;margin-top:-4px;">※この自動設定は <span style="font-family:monospace;">.github/workflows/deploy.yml</span> に書かれています（さわらないでください）。</p>
+  <p style="font-size:8pt;color:#64748b;text-align:center;margin-top:-4px;">※この自動の流れは <span style="font-family:monospace;">.github/workflows/deploy.yml</span> と heteml 接続情報（GitHub の Secrets）で動きます。<b>最初に一度だけ</b>設定すれば完了で、ふだんはさわりません。</p>
 
-  <h2>自動で上がるもの／手動アップが必要なもの</h2>
+  <div class="footer">9 / 11</div>
+</section>
+
+<!-- ============ PAGE 10 : 自動公開と手動アップ ============ -->
+<section class="page">
+  <div class="header"><span>スタートアップガイド</span><span>自動公開と手動アップ</span></div>
+
+  <h1>7. 自動で上がるもの／手動アップが必要なもの</h1>
   <p>ほとんどのファイルは自動で公開されますが、<b>一部だけ「手動でアップ」が必要</b>です。これが「たまに自分でファイルのアップが必要だよ」の正体です。</p>
 
   <table>
@@ -525,14 +544,14 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
 
   <div class="alert-danger" style="margin-top:6px;"><b>🔒 ID・パスワードは社外秘です。</b>チャットやメールで外部に貼らない／公開リポジトリに書かない／人に教えない。万一の漏えいはサイト全体の事故につながります。</div>
 
-  <div class="footer">9 / 10</div>
+  <div class="footer">10 / 11</div>
 </section>
 
-<!-- ============ PAGE 10 : ルール・FAQ・まとめ ============ -->
+<!-- ============ PAGE 11 : ルール・FAQ・まとめ ============ -->
 <section class="page">
   <div class="header"><span>スタートアップガイド</span><span>守ってほしいこと・FAQ・まとめ</span></div>
 
-  <h1>7. 守ってほしいこと（ルールまとめ）</h1>
+  <h1>8. 守ってほしいこと（ルールまとめ）</h1>
   <table>
     <thead><tr><th style="width:42%;">ルール</th><th>なぜ？（理由）</th></tr></thead>
     <tbody>
@@ -544,7 +563,7 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     </tbody>
   </table>
 
-  <h1 style="margin-top:18px;">8. 困ったとき・よくある質問（FAQ）</h1>
+  <h1 style="margin-top:18px;">9. 困ったとき・よくある質問（FAQ）</h1>
   <table>
     <thead><tr><th style="width:40%;">こんなとき</th><th>どうする</th></tr></thead>
     <tbody>
@@ -567,6 +586,6 @@ th{background:#f8fafc;color:var(--primary-color);font-weight:bold;text-align:cen
     </p>
   </div>
 
-  <div class="footer">10 / 10</div>
+  <div class="footer">11 / 11</div>
 </section></body>
 </html>
