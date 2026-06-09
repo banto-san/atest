@@ -110,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo = db();
 
     // 編集系はすべて member 以上が必須
-    if (in_array($action, ['save_api', 'delete_api', 'add_usage', 'delete_usage'], true)) {
+    if (in_array($action, ['save_api', 'delete_api', 'add_usage', 'edit_usage', 'delete_usage'], true)) {
         require_role_at_least($gid, 'member');
     }
 
@@ -654,6 +654,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([':aid'=>$aid, ':repo'=>$repo, ':file'=>$file, ':line'=>$line, ':snip'=>$snip]);
                 flash('ok', '使用箇所を追加しました。');
             }
+        }
+        redirect_self();
+    }
+
+    if ($action === 'edit_usage') {
+        $uid  = (int) ($_POST['id'] ?? 0);
+        $repo = trim((string) ($_POST['repo'] ?? ''));
+        $file = trim((string) ($_POST['file'] ?? ''));
+        $snip = trim((string) ($_POST['snippet'] ?? ''));
+        if ($repo !== '' || $file !== '') {
+            // 現在グループに属する API の usage のみ更新可
+            $pdo->prepare(
+                'UPDATE usages SET repo=:repo, file=:file, snippet=:snip
+                 WHERE id=:id AND api_id IN (SELECT id FROM apis WHERE group_id=:gid)'
+            )->execute([':repo'=>$repo, ':file'=>$file, ':snip'=>$snip, ':id'=>$uid, ':gid'=>$gid]);
+            flash('ok', '使用箇所を更新しました。');
+        } else {
+            flash('err', '場所の名前か URL のいずれかは入力してください。');
         }
         redirect_self();
     }
@@ -3051,7 +3069,7 @@ if ($route === 'api'):
     <p class="hint" style="margin:0 0 12px">1つのキーを複数の場所で使っていても、ここに全部ぶら下げられます。差し替え時の影響範囲がひと目で分かります。</p>
     <div class="table-wrap">
     <table>
-        <thead><tr><th>場所の名前</th><th>URL / パス</th><th>メモ</th><?php if ($editable): ?><th style="width:54px"></th><?php endif; ?></tr></thead>
+        <thead><tr><th>場所の名前</th><th>URL / パス</th><th>メモ</th><?php if ($editable): ?><th style="width:84px"></th><?php endif; ?></tr></thead>
         <tbody>
         <?php if (!$usages): ?>
             <tr><td colspan="<?= $editable ? 4 : 3 ?>" class="muted" style="text-align:center;padding:18px">まだ登録がありません。<?= $editable ? '下のフォームから追加してください。' : '' ?></td></tr>
@@ -3060,7 +3078,7 @@ if ($route === 'api'):
                 <td><?= $u['repo'] !== '' ? h($u['repo']) : '<span class="muted">—</span>' ?></td>
                 <td><?php if ($u['file'] !== ''): ?><?php if (preg_match('#^https?://#i', (string) $u['file'])): ?><a href="<?= h($u['file']) ?>" target="_blank" rel="noopener"><?= h($u['file']) ?></a><?php else: ?><code><?= h($u['file']) ?></code><?php endif; ?><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                 <td><?= $u['snippet'] !== '' ? h($u['snippet']) : '<span class="muted">—</span>' ?></td>
-                <?php if ($editable): ?><td><form method="post" onsubmit="return abtConfirmForm(this, 'この使用箇所を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $u['id'] ?>"><button class="link" type="submit" title="削除" style="color:#b42318"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
+                <?php if ($editable): ?><td style="white-space:nowrap"><button class="link" type="button" title="編集" onclick='openUsageEdit(<?= htmlspecialchars(json_encode(["id"=>(int)$u["id"],"repo"=>$u["repo"],"file"=>$u["file"],"snippet"=>$u["snippet"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_TAG|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)'><?= icon('gear', 15) ?></button><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, 'この使用箇所を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $u['id'] ?>"><button class="link" type="submit" title="削除" style="color:#b42318"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
             </tr>
         <?php endforeach; endif; ?>
         </tbody>
@@ -3080,6 +3098,35 @@ if ($route === 'api'):
         </div>
         <div style="margin-top:10px"><button class="primary" type="submit">追加</button></div>
     </form>
+
+    <dialog id="usageDialog">
+        <form method="post">
+            <div class="modal-head"><?= icon('globe', 16) ?> 使用箇所を編集</div>
+            <div class="modal-body">
+                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                <input type="hidden" name="action" value="edit_usage">
+                <input type="hidden" name="id" id="uEditId">
+                <div class="grid">
+                    <div class="field"><label>場所の名前</label><input name="repo" id="uEditRepo" placeholder="例: コーポレートサイト / 社内bot"></div>
+                    <div class="field"><label>URL / パス（任意）</label><input name="file" id="uEditFile" placeholder="例: https://example.com/contact"></div>
+                    <div class="field full"><label>メモ（任意）</label><input name="snippet" id="uEditSnip" placeholder="例: 問い合わせフォームの送信通知に使用"></div>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button type="button" onclick="document.getElementById('usageDialog').close()">キャンセル</button>
+                <button class="primary" type="submit">保存</button>
+            </div>
+        </form>
+    </dialog>
+    <script>
+    function openUsageEdit(u) {
+        document.getElementById('uEditId').value = u.id;
+        document.getElementById('uEditRepo').value = u.repo || '';
+        document.getElementById('uEditFile').value = u.file || '';
+        document.getElementById('uEditSnip').value = u.snippet || '';
+        document.getElementById('usageDialog').showModal();
+    }
+    </script>
     <?php endif; ?>
 </main>
 </div>

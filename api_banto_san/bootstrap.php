@@ -649,6 +649,18 @@ function render_styles(): void { ?>
         abtConfirm(message, function () { form.submit(); }, opts);
         return false;
     };
+    /* モーダル(<dialog>)の外側（背景）クリックで閉じる。dialog は padding:0 なので
+       背景クリック時は e.target が dialog 要素自身になる（中身クリックは子要素）。
+       共通モーダルはキャンセル扱い（OK は実行しない）にする。全ページ共通で1度だけ登録。 */
+    document.addEventListener('click', function (e) {
+        var t = e.target;
+        if (!t || t.tagName !== 'DIALOG' || !t.open) { return; }
+        if (t.id === '__abtModal') {
+            var cancel = t.querySelector('[data-cancel]');
+            if (cancel) { cancel.click(); return; }
+        }
+        t.close();
+    });
 })();
 </script>
 <?php }
