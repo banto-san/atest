@@ -63,7 +63,7 @@ $data        = load_data();
 $userExclude = array_map('strval', $data['excludeDomains'] ?? []);
 [$domSet, $kwSet] = dd_build_exclude_sets($userExclude);
 
-// プロンプト（関係ページを広く列挙させ、公式（独自ドメイン）の選別はこちら側で行う＝取りこぼし防止）
+// プロンプト（関係ページを広く列挙→公式の選別はこちら。電話/住所での特定を重視）
 $lines = ["会社名: {$name}"];
 if ($person !== '')   { $lines[] = "担当者名: {$person}"; }
 if ($phone !== '')    { $lines[] = "電話番号: {$phone}（番号の一致は強い手がかり）"; }
@@ -74,11 +74,12 @@ $info = implode("\n", $lines);
 
 $prompt = "あなたは企業調査アシスタントです。必ずウェブ検索ツールを使い、次の会社に関する実在のウェブページを、できるだけ多く見つけてください。\n"
         . $info . "\n"
-        . "指示:\n"
-        . "・まず会社名で、次に電話番号でも検索する（電話番号の一致は同一企業の強い手がかり）。\n"
+        . "検索のコツ:\n"
+        . "・まず会社名で検索。見つからなければ、必ず『電話番号』や『住所＋業種』でも検索する。\n"
+        . "・社名とドメイン名が違っていても、電話番号や住所が一致すれば同じ会社の公式サイトと判断してよい。\n"
+        . "出力:\n"
         . "・その会社に関係する実在ページのURLを、本文に1行ずつ完全な形（httpから）で、省略せず列挙する。\n"
         . "・公式サイト・会社概要・採用ページに加え、ポータル/口コミ/地図/求人/SNS等も、見つかったものは全て挙げる（公式かどうかの選別はこちら側で行う）。\n"
-        . "・特に『その会社が自前で運営している公式サイト（独自ドメイン）』があれば必ず含める。\n"
         . "・存在しないURLの作文や省略形（…）は書かない。各ページに出典(引用)を付ける。";
 
 // OpenAI Responses API（網羅性high。弾かれたら素の構成で再試行）
@@ -119,6 +120,8 @@ if ($r['status'] !== 200) {
     dd_out(502, ['error' => 'api_error', 'message' => '検索APIエラー：' . $msg]);
 }
 
+$aiText = dd_extract_text($json);   // AIの本文（診断用）
+
 // 候補URL（引用優先）→ 妥当ドメイン＆非除外だけに絞る（ドメイン単位で1つ）
 $candidates = dd_collect_urls($json);
 $validHosts = [];   // 妥当ドメインかつ非除外（host => url）
@@ -144,7 +147,8 @@ $official  = $reachable[0] ?? null;
 if ($official === null) {
     // 空白になった理由を分かりやすく返す（診断用）
     if (count($validHosts) === 0 && count($excluded) === 0) {
-        $reason = '検索で候補ページが見つかりませんでした（社名・電話番号を変えて再検索すると見つかることがあります）。';
+        $aiSnip = mb_substr(trim($aiText), 0, 300);
+        $reason = '検索で候補ページが見つかりませんでした。［モデル: ' . $model . '］ AIの回答: ' . ($aiSnip !== '' ? $aiSnip : '(本文なし＝検索/応答が空)');
     } elseif (count($validHosts) === 0) {
         $reason = '候補は見つかりましたが、すべて除外対象でした（SNS/予約/求人/無料HP/除外リスト等）：' . implode(', ', array_slice(array_keys($excluded), 0, 5));
     } else {
@@ -166,6 +170,27 @@ dd_out(200, [
 
 
 /* ============================ helpers ============================ */
+
+/** APIレスポンスからAIの本文テキスト(output_text)を取り出す（診断用） */
+function dd_extract_text($node): string
+{
+    $out = [];
+    $walk = function ($n) use (&$walk, &$out) {
+        if (!is_array($n)) {
+            return;
+        }
+        if (($n['type'] ?? '') === 'output_text' && isset($n['text']) && is_string($n['text'])) {
+            $out[] = $n['text'];
+        }
+        foreach ($n as $v) {
+            if (is_array($v)) {
+                $walk($v);
+            }
+        }
+    };
+    $walk($node);
+    return trim(implode("\n", array_values(array_unique($out))));
+}
 
 /** 既定の定番除外ドメイン（parentレベル）。サブドメインもサフィックス一致で除外する。 */
 function dd_builtin_domains(): array
