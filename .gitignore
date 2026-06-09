@@ -12,6 +12,10 @@ webhook.log
 *.sqlite
 *.sqlite3
 
+# media-db のデータ（サーバー上で生成・更新される実データ。リポジトリには含めない）
+media-db/data.json
+media-db/cost_cache.json
+
 # ローカル設定 (OAuthクライアント等の機微情報)
 config.local.php
 

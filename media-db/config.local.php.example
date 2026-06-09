@@ -1,0 +1,47 @@
+<?php
+/**
+ * 設定ファイルの雛形。
+ * --------------------------------------------------------------------------
+ * このファイルを同じフォルダに「config.local.php」という名前でコピーし、
+ * 値を入れてください。（config.local.php は Git に含めず・直アクセスも禁止）
+ *
+ * 【OpenAI APIキーの取り方（他媒体検索用）】
+ *   1) https://platform.openai.com/ にサインイン
+ *   2) 左メニュー「API keys」→「Create new secret key」→ sk-... をコピー
+ *   3) 「Billing」で支払い方法と使用上限を設定
+ *
+ * 【Googleログインの設定】
+ *   1) Google Cloud Console でOAuthクライアント(ウェブアプリ)を作成
+ *   2) 「承認済みのリダイレクトURI」に下記を登録（このサイトのoauth.php）:
+ *        https://s-benri.heteml.net/atest/media-db/oauth.php
+ *   3) 発行された クライアントID / クライアントシークレット を下に貼る
+ *   4) ALLOWED_EMAIL_DOMAINS にログインを許可するドメインを入れる（例: sk-t.com）
+ */
+return [
+    // ===== 他媒体検索（OpenAI） =====
+    'SEARCH_PROVIDER' => 'openai',
+    'SEARCH_API_KEY'  => '',           // sk-...（検索用の通常キー）
+    'SEARCH_MODEL'    => 'gpt-4o-mini',
+    // 検索結果を「実際にアクセスできるURLだけ」に自動でしぼる（リンク切れ除外）。
+    // 既定 true。誤って消える場合は false にすると無効化できる。
+    'VERIFY_URLS'     => true,
+
+    // ===== 使用額の表示（任意）=====
+    // 当月の使用額を表示するには「Adminキー(sk-admin-...)」が必要（通常キーでは不可）。
+    // 発行: platform.openai.com → Settings → Organization → Admin keys
+    'OPENAI_ADMIN_KEY'  => '',          // sk-admin-...
+    'USD_JPY_RATE'      => 155,         // ドル→円のおおよそのレート（表示用）
+    // このサイト“専用のプロジェクト”を作り、検索キーをそのプロジェクトで発行すると、
+    // 下に proj_... を入れることで「このサイト分だけ」の金額を表示できます（空なら組織全体）。
+    'OPENAI_PROJECT_ID' => '',          // proj_...
+
+    // ===== Googleログイン（任意。空ならID/パスワードのみ） =====
+    'GOOGLE_CLIENT_ID'      => '',      // xxxxxxxx.apps.googleusercontent.com
+    'GOOGLE_CLIENT_SECRET'  => '',
+    'ALLOWED_EMAIL_DOMAINS' => 'sk-t.com',  // 複数可（カンマ/スペース区切り）。空なら全ドメイン許可
+    // 'GOOGLE_REDIRECT_URI' => '',     // 通常は未設定でOK（自動で oauth.php を使用）
+
+    // 管理者にするメール（カンマ/スペース区切り）。a.yasugi@sk-t.com は既定で管理者。
+    // ここに追記した人もGoogleログイン時に管理者になる。
+    'ADMIN_EMAILS' => '',
+];

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>受注逆引きデータベース</title>
+    <!-- Tailwind CSSの読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue.jsの読み込み -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Lucide Iconsの読み込み -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans h-screen flex overflow-hidden">
+
+    <div id="app" v-cloak class="w-full flex flex-col h-full">
+
+        <!-- グローバルヘッダー -->
+        <header class="bg-white border-b border-gray-200 p-4 flex items-center justify-between shrink-0 shadow-sm z-10">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600 text-white p-2 rounded-lg">
+                    <i data-lucide="database" class="w-5 h-5"></i>
+                </div>
+                <h1 class="text-xl font-bold text-gray-800 tracking-tight">受注逆引きDB</h1>
+            </div>
+            <!-- ダミーのユーザー/エクスポート領域 -->
+            <div class="flex items-center space-x-4">
+                 <button class="flex items-center space-x-2 bg-green-50 text-green-700 px-3 py-1.5 rounded border border-green-200 hover:bg-green-100 transition">
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                    <span class="text-sm font-medium">CSVエクスポート (未実装)</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- メインエリア (2カラム) -->
+        <div class="flex flex-1 overflow-hidden">
+
+            <!-- 左側ナビゲーション (機能切り替え) -->
+            <nav class="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
+                <div class="p-4 space-y-2 flex-1 overflow-y-auto">
+
+                    <a href="#" @click.prevent="currentView = 'yesterday'"
+                       :class="['flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors', currentView === 'yesterday' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100']">
+                        <i data-lucide="calendar-clock" class="w-5 h-5"></i>
+                        <span>前日の受注から探す</span>
+                    </a>
+
+                    <a href="#" @click.prevent="currentView = 'flag-list'"
+                       :class="['flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors', currentView === 'flag-list' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100']">
+                        <i data-lucide="list-filter" class="w-5 h-5"></i>
+                        <span>フラグ(媒体)別に探す</span>
+                    </a>
+
+                    <a href="#" @click.prevent="currentView = 'ranking'"
+                       :class="['flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors', currentView === 'ranking' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100']">
+                        <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                        <span>利用媒体ランキング</span>
+                    </a>
+
+                </div>
+            </nav>
+
+            <!-- 右側コンテンツエリア -->
+            <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+
+                <!-- 1. 前日受注の顧客が利用してる媒体 ビュー -->
+                <div v-if="currentView === 'yesterday'" class="max-w-5xl mx-auto space-y-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                        <h2 class="text-xl font-bold mb-4 flex items-center">
+                            <i data-lucide="calendar-clock" class="w-6 h-6 mr-2 text-blue-600"></i>
+                            前日受注の顧客リスト
+                        </h2>
+                        <p class="text-gray-500 mb-4">ここに前日受注した顧客の一覧と、その顧客が利用している他の媒体を表示します。</p>
+
+                        <!-- モックアップ用プレースホルダー -->
+                        <div class="border border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
+                            [データ表示エリア] <br>
+                            顧客A（自社受注） => 利用媒体: イツザイ、Sansan<br>
+                            顧客B（自社受注） => 利用媒体: リクナビ、Salesforce
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 顧客をリストフラグごとに表示 ビュー -->
+                <div v-if="currentView === 'flag-list'" class="max-w-5xl mx-auto space-y-6">
+                     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                        <h2 class="text-xl font-bold mb-4 flex items-center">
+                            <i data-lucide="list-filter" class="w-6 h-6 mr-2 text-blue-600"></i>
+                            フラグ（媒体）別 併用状況
+                        </h2>
+                        <p class="text-gray-500 mb-4">特定の媒体（例：イツザイ）にフラグが付いている顧客が、他に何を利用しているかを表示します。</p>
+
+                        <!-- モックアップ用プレースホルダー -->
+                        <div class="mb-4">
+                            <select class="border border-gray-300 rounded-md p-2 w-64">
+                                <option>フラグを選択 (例: イツザイ)</option>
+                            </select>
+                        </div>
+                        <div class="border border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
+                            [データ表示エリア] <br>
+                            「イツザイ」フラグの顧客一覧と、それぞれの併用媒体リストを展開
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. 上記多い順に媒体のTOPドメインのランキング ビュー -->
+                <div v-if="currentView === 'ranking'" class="max-w-5xl mx-auto space-y-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                        <h2 class="text-xl font-bold mb-4 flex items-center">
+                            <i data-lucide="bar-chart-3" class="w-6 h-6 mr-2 text-blue-600"></i>
+                            併用媒体 ドメインランキング
+                        </h2>
+                        <p class="text-gray-500 mb-4">フラグで絞り込んだ顧客群の中で、利用数の多い他媒体（TOPドメイン）をランキング形式で表示します。</p>
+
+                         <!-- モックアップ用プレースホルダー -->
+                        <div class="border border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
+                            [ランキング表示エリア] <br>
+                            1位: aaa.com (15社)<br>
+                            2位: bbb.co.jp (12社)<br>
+                            3位: ccc.net (8社)
+                        </div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, nextTick } = Vue;
+
+        const app = createApp({
+            setup() {
+                // ビューの切り替え用 ('yesterday', 'flag-list', 'ranking')
+                const currentView = ref('yesterday');
+
+                // ここに後からデータを定義します (AIに指示する部分)
+                // const clients = ref([...]);
+                // const mediaList = ref([...]);
+
+                // ライフサイクル
+                onMounted(() => {
+                    nextTick(() => {
+                        lucide.createIcons();
+                    });
+                });
+
+                // ビュー切り替え時にアイコン再描画
+                Vue.watch(currentView, () => {
+                    nextTick(() => {
+                        lucide.createIcons();
+                    });
+                });
+
+                return {
+                    currentView
+                };
+            }
+        });
+
+        app.mount('#app');
+    </script>
+</body>
+</html>

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>受注逆引きデータベース</title>
+    <!-- Tailwind CSSの読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue.jsの読み込み -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Lucide Iconsの読み込み -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans h-screen flex overflow-hidden">
+
+    <div id="app" v-cloak class="w-full flex flex-col h-full">
+
+        <!-- グローバルヘッダー -->
+        <header class="bg-white border-b border-gray-200 p-4 flex items-center justify-between shrink-0 shadow-sm z-10">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600 text-white p-2 rounded-lg">
+                    <i data-lucide="database" class="w-5 h-5"></i>
+                </div>
+                <h1 class="text-xl font-bold text-gray-800 tracking-tight">受注逆引きDB</h1>
+            </div>
+            <!-- CSVエクスポート (現在表示中のビューのデータを出力) -->
+            <div class="flex items-center space-x-4">
+                 <button @click="exportCsv"
+                         :title="'現在表示中（' + currentViewLabel + '）のデータをCSVで書き出します'"
+                         class="flex items-center space-x-2 bg-green-50 text-green-700 px-3 py-1.5 rounded border border-green-200 hover:bg-green-100 transition">
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                    <span class="text-sm font-medium">CSVエクスポート</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- メインエリア (2カラム) -->
+        <div class="flex flex-1 overflow-hidden">
+
+            <!-- 左側ナビゲーション (機能切り替え) -->
+            <nav class="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
+                <div class="p-4 space-y-2 flex-1 overflow-y-auto">
+
+                    <a href="#" @click.prevent="currentView = 'yesterday'"
+                       :class="['flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors', currentView === 'yesterday' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100']">
+                        <i data-lucide="calendar-clock" class="w-5 h-5"></i>
+                        <span>前日の受注から探す</span>
+                    </a>
+
+                    <a href="#" @click.prevent="currentView = 'flag-list'"
+                       :class="['flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors', currentView === 'flag-list' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100']">
+                        <i data-lucide="list-filter" class="w-5 h-5"></i>
+                        <span>フラグ(媒体)別に探す</span>
+                    </a>
+
+                    <a href="#" @click.prevent="currentView = 'ranking'"
+                       :class="['flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors', currentView === 'ranking' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100']">
+                        <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                        <span>利用媒体ランキング</span>
+                    </a>
+
+                </div>
+                <!-- データ概要フッター -->
+                <div class="p-4 border-t border-gray-200 text-xs text-gray-400 space-y-1">
+                    <div>登録顧客数: {{ customers.length }} 社</div>
+                    <div>登録媒体数: {{ mediaMaster.length }} 媒体</div>
+                    <div>本日: {{ today }}</div>
+                </div>
+            </nav>
+
+            <!-- 右側コンテンツエリア -->
+            <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+
+                <!-- 1. 前日受注の顧客が利用してる媒体 ビュー -->
+                <div v-if="currentView === 'yesterday'" class="max-w-5xl mx-auto space-y-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                        <h2 class="text-xl font-bold mb-2 flex items-center">
+                            <i data-lucide="calendar-clock" class="w-6 h-6 mr-2 text-blue-600"></i>
+                            前日受注の顧客リスト
+                        </h2>
+                        <p class="text-gray-500 mb-4">
+                            前日（<span class="font-medium text-gray-700">{{ yesterday }}</span>）に自社受注した顧客と、
+                            その顧客が利用している媒体を表示します。
+                            <span class="ml-1 text-sm text-blue-600 font-medium">該当 {{ yesterdayCustomers.length }} 社</span>
+                        </p>
+
+                        <!-- データ表示エリア -->
+                        <div v-if="yesterdayCustomers.length" class="space-y-3">
+                            <div v-for="c in yesterdayCustomers" :key="c.id"
+                                 class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-800">{{ c.name }}</span>
+                                        <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">自社受注</span>
+                                    </div>
+                                    <span class="text-sm text-gray-400">受注日: {{ c.orderDate }}</span>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="text-xs text-gray-500 mr-1">利用媒体:</span>
+                                    <span v-for="m in mediaListFor(c)" :key="m.id"
+                                          class="inline-flex flex-col bg-gray-50 border border-gray-200 rounded px-2 py-1 leading-tight">
+                                        <span class="text-sm font-medium text-gray-700">{{ m.name }}</span>
+                                        <span class="text-[10px] text-gray-400">{{ m.domain }}</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="border border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
+                            前日（{{ yesterday }}）の受注データはありませんでした。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 顧客をリストフラグごとに表示 ビュー -->
+                <div v-if="currentView === 'flag-list'" class="max-w-5xl mx-auto space-y-6">
+                     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                        <h2 class="text-xl font-bold mb-2 flex items-center">
+                            <i data-lucide="list-filter" class="w-6 h-6 mr-2 text-blue-600"></i>
+                            フラグ（媒体）別 併用状況
+                        </h2>
+                        <p class="text-gray-500 mb-4">特定の媒体（例：イツザイ）にフラグが付いている顧客が、他に何を併用しているかを表示します。</p>
+
+                        <!-- フラグ選択 -->
+                        <div class="mb-4 flex items-center gap-3">
+                            <label class="text-sm font-medium text-gray-600">フラグを選択:</label>
+                            <select v-model="selectedFlag" class="border border-gray-300 rounded-md p-2 w-64 bg-white">
+                                <option v-for="m in availableFlags" :key="m.id" :value="m.id">{{ m.name }}</option>
+                            </select>
+                            <span class="text-sm text-blue-600 font-medium">該当 {{ flagFilteredCustomers.length }} 社</span>
+                        </div>
+
+                        <!-- データ表示エリア -->
+                        <div v-if="flagFilteredCustomers.length" class="space-y-3">
+                            <div v-for="c in flagFilteredCustomers" :key="c.id"
+                                 class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-800">{{ c.name }}</span>
+                                        <span class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">{{ selectedFlagName }}</span>
+                                    </div>
+                                    <span class="text-sm text-gray-400">受注日: {{ c.orderDate }}</span>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="text-xs text-gray-500 mr-1">併用媒体:</span>
+                                    <template v-if="coUsedMediaFor(c).length">
+                                        <span v-for="m in coUsedMediaFor(c)" :key="m.id"
+                                              class="inline-flex flex-col bg-gray-50 border border-gray-200 rounded px-2 py-1 leading-tight">
+                                            <span class="text-sm font-medium text-gray-700">{{ m.name }}</span>
+                                            <span class="text-[10px] text-gray-400">{{ m.domain }}</span>
+                                        </span>
+                                    </template>
+                                    <span v-else class="text-sm text-gray-400">（併用媒体なし）</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="border border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
+                            「{{ selectedFlagName }}」フラグを持つ顧客はいません。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. 上記多い順に媒体のTOPドメインのランキング ビュー -->
+                <div v-if="currentView === 'ranking'" class="max-w-5xl mx-auto space-y-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                        <h2 class="text-xl font-bold mb-2 flex items-center">
+                            <i data-lucide="bar-chart-3" class="w-6 h-6 mr-2 text-blue-600"></i>
+                            併用媒体 ドメインランキング
+                        </h2>
+                        <p class="text-gray-500 mb-4">
+                            「フラグ別」で絞り込んだ顧客群が併用している媒体ドメインを集計し、利用数の多い順に表示します。
+                        </p>
+
+                        <!-- フラグ選択 (フラグ別ビューと連動) -->
+                        <div class="mb-4 flex items-center gap-3">
+                            <label class="text-sm font-medium text-gray-600">対象フラグ:</label>
+                            <select v-model="selectedFlag" class="border border-gray-300 rounded-md p-2 w-64 bg-white">
+                                <option v-for="m in availableFlags" :key="m.id" :value="m.id">{{ m.name }}</option>
+                            </select>
+                            <span class="text-sm text-gray-500">母数: {{ selectedFlagName }} 利用 {{ flagFilteredCustomers.length }} 社</span>
+                        </div>
+
+                        <!-- ランキング表示エリア -->
+                        <div v-if="ranking.length" class="space-y-1">
+                            <div v-for="(item, idx) in ranking" :key="item.media.id"
+                                 class="flex items-center gap-4 py-3 border-b border-gray-100 last:border-0">
+                                <div :class="rankBadgeClass(idx)">{{ idx + 1 }}</div>
+                                <div class="flex-1">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <div>
+                                            <span class="font-semibold text-gray-800">{{ item.media.name }}</span>
+                                            <span class="text-sm text-gray-400 ml-2">{{ item.media.domain }}</span>
+                                        </div>
+                                        <span class="text-sm font-medium text-gray-600">{{ item.count }} 社</span>
+                                    </div>
+                                    <div class="w-full bg-gray-100 rounded-full h-2">
+                                        <div class="bg-blue-500 h-2 rounded-full transition-all"
+                                             :style="{ width: (item.count / maxRankCount * 100) + '%' }"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="border border-dashed border-gray-300 rounded-lg p-8 text-center text-gray-400">
+                            集計対象の併用媒体がありません。
+                        </div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+
+        const app = createApp({
+            setup() {
+                // ===== ビューの切り替え用 ('yesterday', 'flag-list', 'ranking') =====
+                const currentView = ref('yesterday');
+
+                // ===== 日付ヘルパー（実行日を基準に相対日付を生成） =====
+                const toDateStr = (d) => {
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${y}-${m}-${day}`;
+                };
+                const daysAgo = (n) => {
+                    const d = new Date();
+                    d.setHours(0, 0, 0, 0);
+                    d.setDate(d.getDate() - n);
+                    return toDateStr(d);
+                };
+                const today = daysAgo(0);
+                const yesterday = daysAgo(1);
+
+                // ===== 媒体マスタ（ドメイン・サービス名） =====
+                const mediaMaster = [
+                    { id: 'itsuzai',    name: 'イツザイ',      domain: 'itsuzai.jp' },
+                    { id: 'sansan',     name: 'Sansan',        domain: 'sansan.com' },
+                    { id: 'rikunabi',   name: 'リクナビ',      domain: 'rikunabi.com' },
+                    { id: 'salesforce', name: 'Salesforce',    domain: 'salesforce.com' },
+                    { id: 'mynavi',     name: 'マイナビ転職',  domain: 'mynavi.jp' },
+                    { id: 'indeed',     name: 'Indeed',        domain: 'jp.indeed.com' },
+                    { id: 'wantedly',   name: 'Wantedly',      domain: 'wantedly.com' },
+                    { id: 'green',      name: 'Green',         domain: 'green-japan.com' },
+                    { id: 'bizreach',   name: 'ビズリーチ',    domain: 'bizreach.jp' },
+                    { id: 'hubspot',    name: 'HubSpot',       domain: 'hubspot.com' },
+                    { id: 'doda',       name: 'doda',          domain: 'doda.jp' },
+                    { id: 'en',         name: 'エン転職',      domain: 'employment.en-japan.com' },
+                ];
+
+                // 媒体IDから媒体オブジェクトを引くマップ
+                const mediaMap = {};
+                mediaMaster.forEach(m => { mediaMap[m.id] = m; });
+
+                // ===== 顧客データ（名前・受注日・フラグ配列） =====
+                // flags には「その顧客が利用している媒体ID」を格納する
+                const customers = [
+                    { id: 1,  name: '株式会社アルファ',     orderDate: yesterday,  flags: ['itsuzai', 'sansan', 'rikunabi'] },
+                    { id: 2,  name: '株式会社ベータ',       orderDate: yesterday,  flags: ['itsuzai', 'salesforce', 'mynavi'] },
+                    { id: 3,  name: 'ガンマ商事株式会社',   orderDate: yesterday,  flags: ['itsuzai', 'rikunabi', 'indeed', 'wantedly'] },
+                    { id: 4,  name: '有限会社デルタ',       orderDate: today,      flags: ['rikunabi', 'green'] },
+                    { id: 5,  name: '株式会社イプシロン',   orderDate: daysAgo(2), flags: ['itsuzai', 'sansan', 'bizreach'] },
+                    { id: 6,  name: 'ゼータ工業株式会社',   orderDate: yesterday,  flags: ['rikunabi', 'mynavi', 'doda'] },
+                    { id: 7,  name: '株式会社イータ',       orderDate: daysAgo(3), flags: ['itsuzai', 'rikunabi', 'salesforce'] },
+                    { id: 8,  name: 'シータ株式会社',       orderDate: yesterday,  flags: ['itsuzai', 'indeed', 'en'] },
+                    { id: 9,  name: '株式会社イオタ',       orderDate: daysAgo(5), flags: ['sansan', 'salesforce', 'hubspot'] },
+                    { id: 10, name: 'カッパ物産株式会社',   orderDate: today,      flags: ['itsuzai', 'rikunabi', 'sansan', 'wantedly'] },
+                    { id: 11, name: '株式会社ラムダ',       orderDate: daysAgo(2), flags: ['mynavi', 'doda', 'en'] },
+                    { id: 12, name: 'ミュー株式会社',       orderDate: yesterday,  flags: ['itsuzai', 'salesforce', 'green', 'indeed'] },
+                ];
+
+                // フラグIDの配列を媒体オブジェクトの配列に変換
+                const resolveMedia = (ids) => ids.map(id => mediaMap[id]).filter(Boolean);
+
+                // ===== 共通: 選択中フラグ（ビュー2・ビュー3で連動） =====
+                const selectedFlag = ref('itsuzai');
+                const selectedFlagName = computed(() => mediaMap[selectedFlag.value]?.name || '');
+
+                // 実際に1社以上で使われている媒体だけをセレクトボックスに出す
+                const availableFlags = computed(() => {
+                    const used = new Set();
+                    customers.forEach(c => c.flags.forEach(f => used.add(f)));
+                    return mediaMaster.filter(m => used.has(m.id));
+                });
+
+                // ===== ビュー1: 前日受注の顧客 =====
+                const yesterdayCustomers = computed(() =>
+                    customers.filter(c => c.orderDate === yesterday)
+                );
+                // 顧客が利用している全媒体
+                const mediaListFor = (customer) => resolveMedia(customer.flags);
+
+                // ===== ビュー2: 選択フラグで絞り込み =====
+                const flagFilteredCustomers = computed(() =>
+                    selectedFlag.value
+                        ? customers.filter(c => c.flags.includes(selectedFlag.value))
+                        : []
+                );
+                // 併用媒体 = その顧客の全フラグ − 選択中フラグ
+                const coUsedMediaFor = (customer) =>
+                    resolveMedia(customer.flags.filter(f => f !== selectedFlag.value));
+
+                // ===== ビュー3: 併用媒体のランキング =====
+                const ranking = computed(() => {
+                    const counts = {};
+                    flagFilteredCustomers.value.forEach(c => {
+                        c.flags
+                            .filter(f => f !== selectedFlag.value)
+                            .forEach(f => { counts[f] = (counts[f] || 0) + 1; });
+                    });
+                    return Object.entries(counts)
+                        .map(([id, count]) => ({ media: mediaMap[id], count }))
+                        .sort((a, b) => b.count - a.count || a.media.name.localeCompare(b.media.name, 'ja'));
+                });
+                const maxRankCount = computed(() => (ranking.value.length ? ranking.value[0].count : 0));
+
+                // 順位バッジの色分け（1〜3位を金銀銅）
+                const rankBadgeClass = (idx) => {
+                    const base = 'w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm shrink-0 ';
+                    if (idx === 0) return base + 'bg-yellow-400 text-white';
+                    if (idx === 1) return base + 'bg-gray-300 text-white';
+                    if (idx === 2) return base + 'bg-amber-600 text-white';
+                    return base + 'bg-gray-100 text-gray-500';
+                };
+
+                // ===== CSVエクスポート =====
+                const currentViewLabel = computed(() => ({
+                    'yesterday': '前日受注',
+                    'flag-list': 'フラグ別併用状況',
+                    'ranking': '併用媒体ランキング',
+                }[currentView.value] || ''));
+
+                // 1セルをCSV用にエスケープ
+                const escapeCsv = (value) => {
+                    const s = String(value ?? '');
+                    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+                };
+
+                // 2次元配列をCSV文字列にしてダウンロード（ExcelでもUTF-8で文字化けしないようBOM付与）
+                const downloadCsv = (rows, filename) => {
+                    const csv = rows.map(r => r.map(escapeCsv).join(',')).join('\r\n');
+                    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                };
+
+                // 現在表示中のビューに応じたデータをCSV出力
+                const exportCsv = () => {
+                    let rows = [];
+                    let filename = '';
+
+                    if (currentView.value === 'yesterday') {
+                        filename = `前日受注_${yesterday}.csv`;
+                        rows.push(['顧客名', '受注日', '利用媒体', '利用ドメイン']);
+                        yesterdayCustomers.value.forEach(c => {
+                            const media = mediaListFor(c);
+                            rows.push([
+                                c.name,
+                                c.orderDate,
+                                media.map(m => m.name).join(' / '),
+                                media.map(m => m.domain).join(' / '),
+                            ]);
+                        });
+                    } else if (currentView.value === 'flag-list') {
+                        filename = `フラグ別_${selectedFlagName.value}.csv`;
+                        rows.push(['顧客名', '受注日', '選択フラグ', '併用媒体', '併用ドメイン']);
+                        flagFilteredCustomers.value.forEach(c => {
+                            const co = coUsedMediaFor(c);
+                            rows.push([
+                                c.name,
+                                c.orderDate,
+                                selectedFlagName.value,
+                                co.map(m => m.name).join(' / '),
+                                co.map(m => m.domain).join(' / '),
+                            ]);
+                        });
+                    } else if (currentView.value === 'ranking') {
+                        filename = `併用ランキング_${selectedFlagName.value}.csv`;
+                        rows.push(['順位', '媒体名', 'ドメイン', '利用社数', '対象フラグ']);
+                        ranking.value.forEach((item, idx) => {
+                            rows.push([idx + 1, item.media.name, item.media.domain, item.count, selectedFlagName.value]);
+                        });
+                    }
+
+                    if (rows.length <= 1) {
+                        alert('エクスポートできるデータがありません。');
+                        return;
+                    }
+                    downloadCsv(rows, filename);
+                };
+
+                // ===== ライフサイクル =====
+                onMounted(() => {
+                    nextTick(() => { lucide.createIcons(); });
+                });
+
+                // ビュー切り替え時にアイコン再描画
+                watch(currentView, () => {
+                    nextTick(() => { lucide.createIcons(); });
+                });
+
+                return {
+                    // 状態
+                    currentView,
+                    currentViewLabel,
+                    selectedFlag,
+                    selectedFlagName,
+                    // データ
+                    customers,
+                    mediaMaster,
+                    availableFlags,
+                    today,
+                    yesterday,
+                    // ビュー1
+                    yesterdayCustomers,
+                    mediaListFor,
+                    // ビュー2
+                    flagFilteredCustomers,
+                    coUsedMediaFor,
+                    // ビュー3
+                    ranking,
+                    maxRankCount,
+                    rankBadgeClass,
+                    // CSV
+                    exportCsv,
+                };
+            }
+        });
+
+        app.mount('#app');
+    </script>
+</body>
+</html>
