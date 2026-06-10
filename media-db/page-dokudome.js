@@ -180,6 +180,16 @@
             };
             const cancelBulk = () => { cancelFlag = true; };
 
+            // 取り込んだファイル（会社一覧）を取り消す（実行中は不可）
+            const clearImport = () => {
+                if (bulkRunning.value) return;
+                companies.value = [];
+                bulkIndex.value = 0;
+                importFileName.value = '';
+                importMessage.value = '';
+                importError.value = false;
+            };
+
             // 1件だけ調査
             const runOne = async () => {
                 if (!IS_ADMIN) { alert('検索は管理者のみ実行できます。'); return; }
@@ -215,7 +225,7 @@
                 store, form, results, searching,
                 importFileName, importMessage, importError, companies, onFileChange,
                 bulkRunning, bulkDone: bulkIndex, bulkTotal, remaining, progressPct,
-                runBulk, cancelBulk,
+                runBulk, cancelBulk, clearImport,
                 runOne, clearResults,
                 excludeText, excludeCount, saveExclude,
                 exportResults: exportCsvRows, exportCsv: exportCsvRows,

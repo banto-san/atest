@@ -37,6 +37,10 @@ require __DIR__ . '/layout_top.php';
             <input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" @change="onFileChange" class="hidden">
         </label>
         <span v-if="importFileName" class="ml-2 text-sm text-gray-500">{{ importFileName }}</span>
+        <button v-if="companies.length && !bulkRunning" @click="clearImport"
+                class="ml-2 inline-flex items-center gap-1 text-sm text-gray-500 border border-gray-200 rounded-md px-2.5 py-1 hover:bg-gray-50 hover:text-red-600">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i> 取り消す
+        </button>
         <p v-if="importMessage" :class="['text-sm mt-2', importError ? 'text-red-600' : 'text-gray-600']">{{ importMessage }}</p>
 
         <?php if ($canEdit): ?>
