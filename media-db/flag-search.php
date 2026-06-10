@@ -96,8 +96,11 @@ require __DIR__ . '/layout_top.php';
                     <ul class="space-y-3">
                         <li v-for="client in filteredClientsByFlag" :key="client.id" class="p-4 border border-gray-100 rounded-lg shadow-sm">
                             <div class="flex justify-between items-center mb-2">
-                                <h4 class="font-bold text-gray-900 text-lg">{{ client.name }}</h4>
-                                <span class="text-xs text-gray-500">受注日: {{ client.orderDate }}</span>
+                                <div class="min-w-0">
+                                    <h4 class="font-bold text-gray-900 text-lg">{{ client.name }}</h4>
+                                    <span v-if="client.serial" class="text-xs text-gray-400">No. {{ client.serial }}</span>
+                                </div>
+                                <span class="text-xs text-gray-500 shrink-0">受注日: {{ client.orderDate }}</span>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{{ client.industry }}</span>

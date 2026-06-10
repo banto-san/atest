@@ -111,10 +111,10 @@
             return;
         }
         const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-        let csv = '顧客名,業界,受注日,住所,他利用媒体\n';
+        let csv = 'シリアル,顧客名,業界,受注日,住所,他利用媒体\n';
         clientsToExport.forEach(client => {
             const mediaNames = getMediaDetails(client.usedMediaIds).map(m => m.name).join(' / ');
-            csv += [client.name, client.industry, client.orderDate, client.address, mediaNames].map(esc).join(',') + '\n';
+            csv += [client.serial || '', client.name, client.industry, client.orderDate, client.address, mediaNames].map(esc).join(',') + '\n';
         });
         const bom = new Uint8Array([0xEF, 0xBB, 0xBF]); // Excelの文字化け対策
         const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' });

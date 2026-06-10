@@ -220,6 +220,7 @@
 
                 store.clients.push({
                     id: genId('c'),
+                    serial: '',   // 手動登録はNyoiBowシリアルなし
                     name: newClient.value.name,
                     industry: newClient.value.industry,
                     orderDate: newClient.value.orderDate,
@@ -270,23 +271,23 @@
                 let skipCount = 0;
 
                 importRows.value.forEach((cols, idx) => {
-                    // 1行目が見出し（顧客名/会社名）なら飛ばす
-                    if (idx === 0 && /顧客名|会社名|name/i.test(cols[0] || '')) return;
+                    // 1行目が見出し（NyoiBowマスタシリアル/作業日/顧客名 等）なら飛ばす
+                    if (idx === 0 && /NyoiBow|シリアル|顧客名|会社名|作業日|リストカテゴリー/i.test(cols.join(','))) return;
 
-                    const name = (cols[0] || '').trim();
+                    // 列順: ①NyoiBowマスタシリアル ②作業日 ③顧客名 ④新住所 ⑤業種 ⑥リストカテゴリー
+                    const serial = (cols[0] || '').trim();
+                    // cols[1] = 作業日 → 使わない（受注日は取り込み時の「前営業日」を自動設定）
+                    const name = (cols[2] || '').trim();
                     if (!name) { skipCount++; return; }
-
-                    // 列(FileMaker書き出し順): 顧客名, 住所, リスト元媒体, 業種, 受注日
-                    const address = (cols[1] || '').trim();
-                    const sourceName = cleanMediaName(cols[2] || '');
+                    const address    = (cols[3] || '').trim();
+                    const industry   = (cols[4] || '').trim();
+                    const sourceName = cleanMediaName(cols[5] || '');
                     const sourceMediaId = sourceName ? findOrCreateMedia(sourceName) : '';
-                    const industry = (cols[3] || '').trim();
-                    // 受注日はファイルのE列（＝書き出した日）を使わず、取り込み時の「前営業日」を自動設定
-                    const orderDate = prevBizDay;
+                    const orderDate  = prevBizDay;
 
                     store.clients.push({
                         id: genId('c'),
-                        name, industry, orderDate, address, sourceMediaId,
+                        serial, name, industry, orderDate, address, sourceMediaId,
                         usedMediaIds: [],   // 「他に利用している媒体」は取り込み後にダッシュボードの検索で確認
                     });
                     successCount++;

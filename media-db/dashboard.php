@@ -66,8 +66,11 @@ require __DIR__ . '/layout_top.php';
                             <i data-lucide="trash-2" class="w-4 h-4"></i>
                         </button>
                         <div class="flex justify-between items-start mb-2 pr-8">
-                            <h4 @click="openDetail(client)" class="font-bold text-gray-900 cursor-pointer hover:text-blue-700 hover:underline" title="詳細を見る">{{ client.name }}</h4>
-                            <span class="text-xs text-gray-500">{{ client.industry }}</span>
+                            <div class="min-w-0">
+                                <h4 @click="openDetail(client)" class="font-bold text-gray-900 cursor-pointer hover:text-blue-700 hover:underline" title="詳細を見る">{{ client.name }}</h4>
+                                <span v-if="client.serial" class="text-xs text-gray-400">No. {{ client.serial }}</span>
+                            </div>
+                            <span class="text-xs text-gray-500 shrink-0">{{ client.industry }}</span>
                         </div>
                         <div class="text-sm text-gray-600 mb-1">受注日: <span class="font-bold text-gray-800">{{ client.orderDate }}</span></div>
                         <div v-if="client.address" class="text-sm text-gray-600 mb-1">住所: <span class="text-gray-800">{{ client.address }}</span></div>
@@ -175,6 +178,7 @@ require __DIR__ . '/layout_top.php';
         <div class="p-6 space-y-5">
             <!-- 基本情報 -->
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <div class="flex gap-2" v-if="selectedClient.serial"><dt class="text-gray-500 shrink-0 w-20">シリアル</dt><dd class="font-medium text-gray-800">{{ selectedClient.serial }}</dd></div>
                 <div class="flex gap-2"><dt class="text-gray-500 shrink-0 w-20">受注日</dt><dd class="font-medium text-gray-800">{{ selectedClient.orderDate }}</dd></div>
                 <div class="flex gap-2"><dt class="text-gray-500 shrink-0 w-20">最終検索</dt><dd class="text-gray-800">{{ selectedClient.searchedAt || '未検索' }}</dd></div>
                 <div class="flex gap-2 sm:col-span-2"><dt class="text-gray-500 shrink-0 w-20">住所</dt><dd class="text-gray-800">{{ selectedClient.address || '—' }}</dd></div>

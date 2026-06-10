@@ -86,8 +86,8 @@ require __DIR__ . '/layout_top.php';
             </h3>
             <p class="text-sm text-gray-600 mb-3">
                 Excel(.xlsx) または CSV ファイルを選んで取り込みます。
-                <br><span class="font-bold text-red-500 text-xs">列の順番（FileMaker書き出しのまま）: ①顧客名 ②住所 ③リスト元媒体 ④業種 ⑤受注日</span>
-                <br><span class="text-xs text-gray-500">※見出し行は無くてOK。<b>受注日はファイルの日付ではなく「前営業日」</b>（土日・祝日・連休は自動でさかのぼり）で登録します。「他に利用している媒体」はこの取り込みには含めません。</span>
+                <br><span class="font-bold text-red-500 text-xs">列の順番: ①NyoiBowマスタシリアル ②作業日 ③顧客名 ④新住所 ⑤業種 ⑥リストカテゴリー</span>
+                <br><span class="text-xs text-gray-500">※見出し行（1行目）はあってもOK。<b>受注日はファイルの「作業日」ではなく「前営業日」</b>（土日・祝日・連休は自動でさかのぼり）で登録します。シリアルは取り込んで一覧に表示します。「他に利用している媒体」はこの取り込みには含めません。</span>
             </p>
 
             <!-- ファイル選択エリア -->
@@ -141,6 +141,7 @@ require __DIR__ . '/layout_top.php';
                         <th class="px-3 py-3 w-10 text-center">
                             <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" class="w-4 h-4 rounded border-gray-300" title="全選択">
                         </th>
+                        <th class="px-3 py-3 font-bold">シリアル</th>
                         <th class="px-3 py-3 font-bold">顧客名</th>
                         <th class="px-3 py-3 font-bold">業界</th>
                         <th class="px-3 py-3 font-bold">住所</th>
@@ -154,6 +155,7 @@ require __DIR__ . '/layout_top.php';
                         <td class="px-3 py-2 text-center">
                             <input type="checkbox" :value="client.id" v-model="selectedClientIds" class="w-4 h-4 rounded border-gray-300">
                         </td>
+                        <td class="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">{{ client.serial || '—' }}</td>
                         <td class="px-3 py-2 font-medium text-gray-900">{{ client.name }}</td>
                         <td class="px-3 py-2 text-gray-600">{{ client.industry }}</td>
                         <td class="px-3 py-2 text-gray-600">{{ client.address }}</td>
