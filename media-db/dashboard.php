@@ -4,7 +4,7 @@ require __DIR__ . '/bootstrap.php';
 require_login();
 
 $data       = load_data();
-$canSearch  = is_admin();   // API課金が発生する検索は管理者のみ
+$canSearch  = can_use_api();   // API課金が発生する検索は admin / manager のみ
 $pageTitle  = '受注一覧・ランキング';
 $currentNav = 'dashboard';
 $pageScript = 'page-dashboard.js';

@@ -26,8 +26,8 @@ function dd_out(int $code, array $payload): void
 if (!current_user()) {
     dd_out(401, ['error' => 'unauthorized', 'message' => 'ログインが必要です。']);
 }
-if (!is_admin()) {
-    dd_out(403, ['error' => 'forbidden', 'message' => 'この検索は管理者のみ実行できます。']);
+if (!can_use_api()) {
+    dd_out(403, ['error' => 'forbidden', 'message' => 'この検索を実行する権限がありません（管理者またはAPI利用可の権限が必要です）。']);
 }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     dd_out(405, ['error' => 'method_not_allowed']);

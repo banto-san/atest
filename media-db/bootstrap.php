@@ -155,7 +155,7 @@ function load_data(): array
 
     // 権限(role)の補完：未設定なら loginId 'admin' を管理者、それ以外は一般に。
     foreach ($data['users'] as &$u) {
-        if (!isset($u['role']) || !in_array($u['role'], ['admin', 'member'], true)) {
+        if (!isset($u['role']) || !in_array($u['role'], ['admin', 'manager', 'member'], true)) {
             $u['role'] = (($u['loginId'] ?? '') === 'admin') ? 'admin' : 'member';
         }
     }
@@ -209,11 +209,23 @@ function current_user(): ?array
     return null;
 }
 
-/** 現在のユーザーが管理者(role=admin)か */
+/** 現在のユーザーが管理者(role=admin)か。※アカウント編集・除外リスト編集はこれが必要。 */
 function is_admin(): bool
 {
     $u = current_user();
     return $u !== null && ($u['role'] ?? '') === 'admin';
+}
+
+/**
+ * API（検索など課金処理）を実行できる権限か（admin か manager）。
+ * - admin   : 全権限（アカウント編集も可）
+ * - manager : API利用は可。アカウント/管理者の編集は不可
+ * - member  : 閲覧のみ（API不可）
+ */
+function can_use_api(): bool
+{
+    $u = current_user();
+    return $u !== null && in_array($u['role'] ?? '', ['admin', 'manager'], true);
 }
 
 /** 未ログインならログイン画面へ飛ばす。ログイン中ならユーザー行を返す。 */

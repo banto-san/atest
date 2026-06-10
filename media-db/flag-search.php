@@ -4,7 +4,7 @@ require __DIR__ . '/bootstrap.php';
 require_login();
 
 $data       = load_data();
-$canSearch  = is_admin();   // API課金が発生する検索は管理者のみ
+$canSearch  = can_use_api();   // API課金が発生する検索は admin / manager のみ
 $pageTitle  = 'フラグ(媒体)別 逆引き検索';
 $currentNav = 'flag-search';
 $pageScript = 'page-flag-search.js';

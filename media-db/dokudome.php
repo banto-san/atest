@@ -4,7 +4,7 @@ require __DIR__ . '/bootstrap.php';
 require_login();
 
 $data       = load_data();
-$canEdit    = is_admin();   // 検索(有料API)・除外リスト編集は管理者のみ
+$canEdit    = can_use_api();   // 検索(有料API)・除外リスト編集は admin / manager のみ
 $pageTitle  = '独ドメげっと';
 $currentNav = 'dokudome';
 $pageScript = 'page-dokudome.js';
