@@ -41,9 +41,9 @@ function mdb_search_address(string $address): string
 if (!current_user()) {
     search_out(401, ['error' => 'unauthorized', 'message' => 'ログインが必要です。']);
 }
-// 検索はAPI課金が発生するため管理者のみ実行可
-if (!is_admin()) {
-    search_out(403, ['error' => 'forbidden', 'message' => '他媒体の検索は管理者のみ実行できます。']);
+// 検索はAPI課金が発生するため、API利用権限(管理者 or API利用可)が必要
+if (!can_use_api()) {
+    search_out(403, ['error' => 'forbidden', 'message' => '他媒体の検索を実行する権限がありません（管理者またはAPI利用可の権限が必要です）。']);
 }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     search_out(405, ['error' => 'method_not_allowed']);

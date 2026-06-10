@@ -19,22 +19,31 @@
             const adminCount = () => store.users.filter(u => (u.role || 'member') === 'admin').length;
 
             const saveUser = () => {
+                const f = userForm.value;
+                if (!f.name.trim() || !f.loginId.trim()) { alert('表示名とログインIDを入力してください。'); return; }
                 if (editingUser.value) {
                     const index = store.users.findIndex(u => u.id === editingUser.value.id);
                     if (index !== -1) {
-                        // 最後の管理者を一般に降格しようとした場合は防ぐ
-                        if (store.users[index].role === 'admin' && userForm.value.role !== 'admin' && adminCount() <= 1) {
-                            alert('最後の管理者を一般に変更することはできません。先に別の管理者を作成してください。');
+                        // 最後の管理者(全権限)を降格しようとした場合は防ぐ
+                        if (store.users[index].role === 'admin' && f.role !== 'admin' && adminCount() <= 1) {
+                            alert('最後の管理者（全権限）を変更することはできません。先に別の管理者を作成してください。');
                             return;
                         }
-                        store.users[index] = { ...store.users[index], ...userForm.value };
+                        const updated = { ...store.users[index], name: f.name, loginId: f.loginId, role: f.role };
+                        if (f.password.trim() !== '') updated.password = f.password;   // 空欄なら現在のパスワードを維持
+                        store.users[index] = updated;
                     }
                 } else {
-                    store.users.push({ id: genId('u'), ...userForm.value });
+                    // 新規：パスワードは任意（空ならGoogleログイン専用アカウント）
+                    store.users.push({ id: genId('u'), name: f.name, loginId: f.loginId, password: f.password || '', role: f.role });
                 }
                 userForm.value = { name: '', loginId: '', password: '', role: 'member' };
                 editingUser.value = null;
             };
+
+            // 権限の表示ラベル / バッジ色（3段階）
+            const roleLabel = (r) => ({ admin: '管理者（全権限）', manager: 'API利用可', member: '閲覧のみ' })[r] || '閲覧のみ';
+            const roleBadge = (r) => ({ admin: 'bg-blue-100 text-blue-700', manager: 'bg-emerald-100 text-emerald-700', member: 'bg-gray-100 text-gray-600' })[r] || 'bg-gray-100 text-gray-600';
 
             const editUser = (user) => {
                 editingUser.value = user;
@@ -68,6 +77,7 @@
             return {
                 store, systemUsers,
                 userForm, editingUser, saveUser, editUser, cancelUserEdit, deleteUser,
+                roleLabel, roleBadge,
                 exportCsv,
             };
         }

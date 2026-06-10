@@ -56,10 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         json_out(400, ['error' => 'invalid_payload', 'message' => 'clients が含まれていません。']);
     }
 
-    // アカウント(users)・除外ドメインは管理者のみ変更可。非管理者の保存では既存を維持する。
+    // アカウント(users)は管理者(admin)のみ変更可。除外ドメインはAPI利用可(admin/manager)も変更可。
     $current = load_data();
-    $users          = is_admin() ? ($body['users'] ?? []) : ($current['users'] ?? []);
-    $excludeDomains = is_admin() ? ($body['excludeDomains'] ?? ($current['excludeDomains'] ?? [])) : ($current['excludeDomains'] ?? []);
+    $users          = is_admin()    ? ($body['users']          ?? []) : ($current['users']          ?? []);
+    $excludeDomains = can_use_api() ? ($body['excludeDomains'] ?? ($current['excludeDomains'] ?? [])) : ($current['excludeDomains'] ?? []);
 
     $ok = save_data([
         'users'          => $users,

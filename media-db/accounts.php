@@ -47,15 +47,18 @@ require __DIR__ . '/layout_top.php';
                         <input type="text" v-model="userForm.loginId" required placeholder="yamada123" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">パスワード</label>
-                        <input type="text" v-model="userForm.password" required class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">パスワード <span class="text-gray-400 font-normal">（任意）</span></label>
+                        <input type="text" v-model="userForm.password" placeholder="Googleログインのみなら空欄でOK" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                        <p class="text-xs text-gray-400 mt-1">Googleでログインする人は空欄でOK。ID/パスワードで入る人だけ設定（編集で空欄＝現在のまま）。</p>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">権限</label>
                         <select v-model="userForm.role" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
-                            <option value="member">一般メンバー（閲覧・登録のみ）</option>
-                            <option value="admin">管理者（アカウント管理も可）</option>
+                            <option value="admin">① 管理者（全権限：アカウント・APIすべて）</option>
+                            <option value="manager">② API利用可（検索OK・アカウント編集は不可）</option>
+                            <option value="member">③ 閲覧のみ（見るだけ・API不可）</option>
                         </select>
+                        <p class="text-xs text-gray-400 mt-1">①なんでも可 ②検索などAPIは使えるがアカウントは触れない ③閲覧だけ</p>
                     </div>
                     <div class="flex space-x-2 pt-2">
                         <button type="submit" :disabled="store.isSyncing" class="flex-1 bg-blue-600 text-white font-medium py-2 px-4 rounded-md hover:bg-blue-700 transition shadow-sm disabled:opacity-50">
@@ -88,12 +91,10 @@ require __DIR__ . '/layout_top.php';
                                 <td class="px-4 py-3 font-medium text-gray-900">{{ user.name }}</td>
                                 <td class="px-4 py-3 text-gray-600">{{ user.loginId }}</td>
                                 <td class="px-4 py-3">
-                                    <span :class="user.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'" class="text-xs font-medium px-2 py-0.5 rounded">
-                                        {{ user.role === 'admin' ? '管理者' : '一般' }}
-                                    </span>
+                                    <span :class="roleBadge(user.role)" class="text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap">{{ roleLabel(user.role) }}</span>
                                 </td>
                                 <?php if ($canEdit): ?>
-                                <td class="px-4 py-3 text-gray-400">••••</td>
+                                <td class="px-4 py-3 text-gray-400">{{ user.password ? '••••' : '—' }}</td>
                                 <td class="px-4 py-3 text-center">
                                     <div class="flex items-center justify-center space-x-2">
                                         <button @click="editUser(user)" class="text-blue-600 hover:bg-blue-50 p-1.5 rounded" title="編集">
