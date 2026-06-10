@@ -51,7 +51,13 @@ require __DIR__ . '/layout_top.php';
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">利用している他媒体 (複数選択可)</label>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-medium text-gray-700">利用している他媒体 (複数選択可)</label>
+                        <button type="button" @click="deleteAllMedia" :disabled="mediaList.length === 0"
+                                class="inline-flex items-center gap-1 text-xs font-medium text-red-600 border border-red-200 rounded px-2 py-1 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i data-lucide="trash" class="w-3.5 h-3.5"></i> 媒体を全削除
+                        </button>
+                    </div>
                     <div class="h-48 overflow-y-auto border border-gray-200 rounded-md p-2 bg-gray-50 mb-2">
                         <div v-for="(media, index) in mediaList" :key="media.id" class="flex items-center justify-between mb-1 p-1.5 hover:bg-white hover:shadow-sm rounded group transition-all">
                             <div class="flex items-center">

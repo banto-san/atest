@@ -207,6 +207,20 @@
                 setTimeout(() => { successMessage.value = ''; }, 3000);
             };
 
+            // 媒体（リストカテゴリー）を全削除（顧客側の参照もすべて外す）
+            const deleteAllMedia = () => {
+                const n = store.media.length;
+                if (n === 0) return;
+                if (!confirm(`登録されている媒体（リストカテゴリー）${n}件をすべて削除しますか？\n各顧客の「受注リスト元」「他に利用している媒体」からも外れます。\nこの操作は元に戻せません。`)) return;
+                store.media = [];
+                store.clients.forEach(client => {
+                    client.usedMediaIds = [];
+                    if (client.sourceMediaId) client.sourceMediaId = '';
+                });
+                successMessage.value = `媒体を全件削除しました（${n}件）。`;
+                setTimeout(() => { successMessage.value = ''; }, 3000);
+            };
+
             const registerSingleClient = () => {
                 const finalMediaIds = [...newClient.value.usedMediaIds];
 
@@ -344,7 +358,7 @@
 
             return {
                 store, mediaList,
-                newClient, newClientManualFlags, successMessage, registerSingleClient, deleteMedia,
+                newClient, newClientManualFlags, successMessage, registerSingleClient, deleteMedia, deleteAllMedia,
                 importFileName, importRows, importMessage, importError, onFileChange, processImport,
                 selectedClientIds, allSelected, toggleSelectAll, deleteOneClient, deleteSelected, deleteAllClients,
                 sourceMediaName, exportCsv,
