@@ -403,8 +403,9 @@ def connect_and_login():
     return s, csrf
 
 
-def search_all_pending(auto_yes=False):
-    """未取得（searchedAt が無い）顧客すべてを search.php で1件ずつ検索する。
+def search_all_pending(auto_yes=False, limit=None):
+    """未取得（searchedAt が無い）顧客を search.php で1件ずつ検索する。
+       limit を指定するとその件数だけ実行（テスト用にAPI課金を抑える）。
        これ1回で dashboard / flag-search 両方のデータが揃う（リスト元の個別選択は不要）。"""
     banner("他媒体検索: 未取得をまとめて検索（dashboard / flag-search 共通）")
     s, csrf = connect_and_login()
@@ -417,6 +418,11 @@ def search_all_pending(auto_yes=False):
     if not pending:
         log("未取得の顧客はありません。検索対象なしで終了します。", 0)
         return
+
+    # テスト用に件数を絞る（API課金を抑える）
+    if limit is not None and 0 < limit < len(pending):
+        pending = pending[:limit]
+        log(f"★テストモード: 先頭 {limit} 件だけ検索します（残りの未取得分は未実行のまま）", 1)
 
     # 課金が出るので確認（--yes で省略可）
     if not auto_yes:
@@ -468,18 +474,29 @@ def search_all_pending(auto_yes=False):
 # ----------------------------------------------------------------------
 def main():
     args = sys.argv[1:]
-    mode = next((a for a in args if a.startswith("--") and a != "--yes"), "")
+    flags = {"--yes", "--test", "--limit"}
+    mode = next((a for a in args if a.startswith("--") and a not in flags), "")
     auto_yes = "--yes" in args
+
+    # 検索の件数制限（テスト用）: --test=1件、--limit N=N件
+    limit = None
+    if "--test" in args:
+        limit = 1
+    if "--limit" in args:
+        try:
+            limit = int(args[args.index("--limit") + 1])
+        except (IndexError, ValueError):
+            raise SystemExit("❌ --limit の後ろに件数を指定してください（例: --search --limit 3）")
 
     label = {"--import-only": "取り込みのみ", "--fm-only": "FileMakerのみ",
              "--search": "未取得をまとめて検索"}.get(mode, "全工程（FileMaker→取り込み）")
     banner("作業リスト履歴 → 逆引きDB パイプライン")
-    log(f"モード      : {label}", 1)
+    log(f"モード      : {label}" + (f"（テスト: {limit}件）" if (mode == '--search' and limit) else ""), 1)
     log(f"取り込み先  : {BASE}", 1)
 
     # 他媒体検索（dashboard / flag-search 共通）— ログインだけで完結
     if mode == "--search":
-        search_all_pending(auto_yes=auto_yes)
+        search_all_pending(auto_yes=auto_yes, limit=limit)
         return
 
     log(f"FileMaker   : {FM_FILE}", 1)
