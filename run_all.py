@@ -81,24 +81,49 @@ def banner(title):
 # ----------------------------------------------------------------------
 # CSVの場所（実行中PCのデスクトップ）を自動検出
 # ----------------------------------------------------------------------
-def csv_candidates():
-    """逆引き.csv のフルパス候補を返す。CSV_PATH指定があればそれ優先。"""
-    if CSV_PATH:
-        return [CSV_PATH]
+def _desktop_dirs():
+    """『本当のデスクトップ』候補を広めに集める（OneDrive既知フォルダ移動/法人OneDriveにも対応）。"""
+    import glob
+    home = os.path.expanduser("~")
     dirs = []
-    # レジストリの実デスクトップ（OneDriveリダイレクトにも対応）
+    # 1) 既知フォルダAPI（OneDriveへ移動済みでも“今のデスクトップ”を返す。最も確実）
     try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders") as k:
-            dirs.append(os.path.expandvars(winreg.QueryValueEx(k, "Desktop")[0]))
+        import ctypes
+        from ctypes import wintypes
+        class GUID(ctypes.Structure):
+            _fields_ = [("d1", wintypes.DWORD), ("d2", wintypes.WORD),
+                        ("d3", wintypes.WORD), ("d4", ctypes.c_byte * 8)]
+        FOLDERID_Desktop = GUID(0xB4BFCC3A, 0xDB2C, 0x424C,
+                                (ctypes.c_byte * 8)(0xB0, 0x29, 0x7F, 0xE9, 0x9A, 0x87, 0xC6, 0x41))
+        ptr = ctypes.c_wchar_p()
+        if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(FOLDERID_Desktop), 0, None, ctypes.byref(ptr)) == 0:
+            dirs.append(ptr.value)
+            ctypes.windll.ole32.CoTaskMemFree(ptr)
     except Exception:
         pass
-    home = os.path.expanduser("~")
-    dirs += [os.path.join(home, "Desktop"), os.path.join(home, "OneDrive", "Desktop")]
-    # 重複除去してフルパス化
+    # 2) レジストリ（Shell Folders / User Shell Folders）
+    for keypath in (r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"):
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, keypath) as k:
+                dirs.append(os.path.expandvars(winreg.QueryValueEx(k, "Desktop")[0]))
+        except Exception:
+            pass
+    # 3) 既定 + OneDrive（個人/法人）の Desktop / デスクトップ
+    dirs.append(os.path.join(home, "Desktop"))
+    for pat in (os.path.join(home, "OneDrive*", "Desktop"),
+                os.path.join(home, "OneDrive*", "デスクトップ")):
+        dirs.extend(glob.glob(pat))
+    return dirs
+
+
+def csv_candidates():
+    """逆引き.csv のフルパス候補（重複除去）。CSV_PATH指定があればそれ優先。"""
+    if CSV_PATH:
+        return [CSV_PATH]
     out, seen = [], set()
-    for d in dirs:
+    for d in _desktop_dirs():
         if not d:
             continue
         key = os.path.normcase(os.path.abspath(d))
@@ -139,54 +164,74 @@ def run_filemaker():
     log("FileMakerでファイルを開いています...", 1)
     os.startfile(FM_PATH)
 
-    # 2) FileMakerウィンドウの出現を待つ
+    # 2) FileMakerウィンドウの出現を待つ（win32優先＝メニューを名前で直接実行できる）
     log(f"FileMakerウィンドウの出現を待機中（最大{FM_WINDOW_WAIT}秒）...", 1)
     app = None
+    backend = "win32"
     deadline = time.time() + FM_WINDOW_WAIT
-    while time.time() < deadline:
-        try:
-            app = Application(backend="uia").connect(
-                title_re=r".*(FileMaker|" + re.escape(DB_NAME) + r").*", timeout=1)
-            break
-        except Exception:
+    while time.time() < deadline and app is None:
+        for be in ("win32", "uia"):
+            try:
+                app = Application(backend=be).connect(
+                    title_re=r".*(FileMaker|" + re.escape(DB_NAME) + r").*", timeout=1)
+                backend = be
+                break
+            except Exception:
+                app = None
+        if app is None:
             time.sleep(1)
     if app is None:
         raise SystemExit("❌ FileMakerのウィンドウが見つかりませんでした。起動を確認してください。")
-
-    # メインのデータウィンドウ（タイトル＝ファイル名）を取得
     try:
         win = app.window(title=DB_NAME)
-        win.wait("exists", timeout=10)
+        win.wait("exists", timeout=15)
     except Exception:
         win = app.top_window()
-    log(f"✓ ウィンドウ検出: 「{win.window_text()}」", 1)
+    log(f"✓ ウィンドウ検出: 「{win.window_text()}」（backend={backend}）", 1)
 
-    # 3) ファイルが開ききるのを少しだけ待つ（ログイン無し）
+    # 3) ファイルが開ききるのを少し待つ
     log(f"操作開始まで {FM_SETTLE_WAIT}秒 待機...", 1)
     time.sleep(FM_SETTLE_WAIT)
 
-    # 4) メニューバーの「スクリプト(S)」を開いて media-db を実行
-    #    手作業と同じ手順:
-    #      Alt+S      = メニューバーの「スクリプト(S)」を押す（＝メニューを開く）
-    #      m          = 先頭文字で media-db を選択（メニュー内で m始まりは media-db のみ）
-    #      Enter      = 実行 → デスクトップに 逆引き.csv を書き出す
+    # 4) 「スクリプト(S)」→ media-db を実行
     key = (SCRIPT_KEY or SCRIPT_NAME[0])
-    log(f"メニューバー『{SCRIPT_MENU}(S)』を開いて『{SCRIPT_NAME}』を実行します...", 1)
-    try:
-        win.set_focus()
-        time.sleep(0.6)
-        log("① Alt+S でスクリプトメニューを開く", 2)
-        send_keys("%s")
-        time.sleep(1.0)
-        log(f"② 先頭文字『{key}』で {SCRIPT_NAME} を選択", 2)
-        send_keys(key)
-        time.sleep(0.5)
-        log("③ Enter で実行", 2)
-        send_keys("{ENTER}")
-    except Exception as e:
-        raise SystemExit(f"❌ メニュー操作に失敗しました: {type(e).__name__}: {e}")
-    log(f"✓ 『{SCRIPT_NAME}』を実行しました（Alt+S → {key} → Enter）", 1)
-    log("CSVが書き出されない場合は SCRIPT_KEY や待機秒を調整します", 2)
+    log(f"『{SCRIPT_MENU}(S)』メニュー →『{SCRIPT_NAME}』を実行します...", 1)
+    ran = False
+
+    # 方法A（最優先）: 標準メニューを“名前で直接”実行（フォーカス不要・最も確実）
+    if backend == "win32":
+        for mp in (f"{SCRIPT_MENU}->{SCRIPT_NAME}", f"{SCRIPT_MENU}(S)->{SCRIPT_NAME}"):
+            try:
+                win.menu_select(mp)
+                ran = True
+                log(f"✓ メニューから実行しました（menu_select: {mp}）", 2)
+                break
+            except Exception as e:
+                log(f"× menu_select 失敗（{mp} / {type(e).__name__}）", 2)
+
+    # 方法B: キーボード（ウィンドウを前面化 → Alt+S → 先頭文字 → Enter）
+    if not ran:
+        try:
+            win.set_focus()
+            time.sleep(0.8)
+            log(f"キーボード操作: Alt+S → {key} → Enter を送信", 2)
+            send_keys("%s")
+            time.sleep(1.0)
+            send_keys(key)
+            time.sleep(0.5)
+            send_keys("{ENTER}")
+            ran = True
+            log("✓ キーボードで実行しました", 2)
+        except Exception as e:
+            log(f"× キーボード操作も失敗（{type(e).__name__}）", 2)
+
+    if not ran:
+        raise SystemExit(
+            f"❌ 『{SCRIPT_NAME}』を実行できませんでした。メニュー名（{SCRIPT_MENU}）や"
+            f"スクリプト名が実画面と一致しているか確認してください（英語版なら Scripts）。"
+        )
+    log(f"✓ 『{SCRIPT_NAME}』を実行しました", 1)
+    log("（CSVが出ない場合は SCRIPT_NAME と実際のメニュー表示名の一致を確認）", 2)
 
 
 # ----------------------------------------------------------------------
