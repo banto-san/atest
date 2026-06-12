@@ -355,9 +355,19 @@ def wait_for_fresh_csv(baselines):
 # ----------------------------------------------------------------------
 # STEP3: CSVをサイトへ取り込み
 # ----------------------------------------------------------------------
+def _autoconfig_url():
+    """WinINETの自動構成スクリプト(PAC)URLをレジストリから取得（無ければ空）。"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") as k:
+            return str(winreg.QueryValueEx(k, "AutoConfigURL")[0] or "")
+    except Exception:
+        return ""
+
+
 def make_session():
-    """requests セッションを作成（プロキシ/PAC・IPv4強制・証明書検証・リトライを設定）。"""
-    # IPv6経路でTLSが切られる環境向けに、必要ならIPv4を強制
+    """(session, 接続方法の説明) を返す。プロキシ/PAC・IPv4強制・証明書検証・リトライを設定。"""
     if FORCE_IPV4:
         try:
             import socket
@@ -370,16 +380,27 @@ def make_session():
     if PROXY:
         s = requests.Session()
         s.proxies.update({"http": PROXY, "https": PROXY})
-        s.trust_env = False                  # 明示プロキシを最優先
+        s.trust_env = False
+        method = f"明示PROXY {PROXY}"
     elif USE_PAC:
         try:
-            from pypac import PACSession      # 社内PAC(自動構成)を検出・評価して使う
-            s = PACSession()
+            from pypac import PACSession, get_pac
+            url = _autoconfig_url()
+            try:
+                pac = get_pac(url=url) if url else get_pac()
+            except Exception:
+                pac = None
+            s = PACSession(pac=pac) if pac else PACSession()
             pac_used = True
+            method = "PAC自動(pypac)" + (f": {url}" if url else ": WPAD探索")
         except ImportError:
-            s = requests.Session()            # pypac未導入 → 通常（直結/レジストリ）
+            s = requests.Session()
+            method = "直結（⚠ pypac 未導入）"
+            log("⚠ pypac が未導入のため PAC を使えません（社内環境では接続に失敗します）。", 1)
+            log("   PowerShellで  python -m pip install pypac  を実行してから再実行してください。", 1)
     else:
         s = requests.Session()
+        method = "直結/システム設定(trust_env)"
 
     s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) mediadb-import/1.0"})
     s.verify = VERIFY_SSL
@@ -396,7 +417,7 @@ def make_session():
         adapter = HTTPAdapter(max_retries=retry)
         s.mount("https://", adapter)
         s.mount("http://", adapter)
-    return s
+    return s, method
 
 
 def read_csv_rows(path):
@@ -509,9 +530,11 @@ def import_csv(path):
 # ----------------------------------------------------------------------
 def connect_and_login():
     """セッションを作りログインして (session, csrf) を返す。"""
-    s = make_session()
-    mode_proxy = PROXY or ("PAC自動" if USE_PAC else "") or (urllib.request.getproxies() or "なし(直結)")
-    log(f"接続設定: プロキシ={mode_proxy} / IPv4強制={FORCE_IPV4} / 証明書検証={VERIFY_SSL}", 1)
+    s, method = make_session()
+    log(f"接続方法: {method} / IPv4強制={FORCE_IPV4} / 証明書検証={VERIFY_SSL}", 1)
+    pac_url = _autoconfig_url()
+    if pac_url:
+        log(f"PAC(自動構成)URL: {pac_url}", 2)
     log("ログイン画面を取得: GET /index.php", 1)
     r = s.get(f"{BASE}/index.php", timeout=15); r.raise_for_status()
     m = re.search(r'name="csrf"\s+value="([^"]+)"', r.text)
