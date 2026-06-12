@@ -316,40 +316,50 @@ def run_filemaker():
 
 
 # ----------------------------------------------------------------------
-# STEP2: CSVが新しく書き出されるのを待つ（複数のデスクトップ候補を監視）
+# STEP2: 取り込むCSVを確定（media-dbが上書きする前提。既存があればそれを使う）
 # ----------------------------------------------------------------------
-def wait_for_fresh_csv(baselines):
-    """baselines = {path: mtime}。新しく更新され、サイズが安定した path を返す（無ければ None）。"""
-    banner("STEP2: 逆引き.csv の書き出しを待機")
-    for p, b in baselines.items():
-        when = dt.datetime.fromtimestamp(b).strftime("%H:%M:%S") if b else "無し"
-        log(f"監視: {p}（既存: {when}）", 1)
-    log(f"タイムアウト: {CSV_WAIT_TIMEOUT}秒 / 2秒ごとに確認", 1)
+def wait_for_csv(timeout=CSV_WAIT_TIMEOUT, settle=6):
+    """取り込む 逆引き.csv を確定して返す。
+       ・既存のCSVがあれば（最新のものを）取り込む。media-dbが必ず上書きするため
+         更新時刻の新旧は問わない。
+       ・半分だけ書き込まれたファイルを読まないよう、サイズの安定だけ確認する。
+       ・CSVが1つも無い場合のみ、出現するまで待つ。"""
+    banner("STEP2: 取り込むCSVを確定")
+    cands = csv_candidates()
+    for p in cands:
+        if os.path.exists(p):
+            when = dt.datetime.fromtimestamp(os.path.getmtime(p)).strftime("%H:%M:%S")
+            log(f"候補: {p}（あり {when} / {os.path.getsize(p):,}B）", 1)
+        else:
+            log(f"候補: {p}（なし）", 1)
+
+    # media-db の書き出し完了を少しだけ待つ（上書き途中を読まないため）
+    log(f"書き出し完了を待機（{settle}秒）...", 1)
+    time.sleep(settle)
 
     start = time.time()
-    sizes = {p: -1 for p in baselines}
-    stables = {p: 0 for p in baselines}
-    while time.time() - start < CSV_WAIT_TIMEOUT:
-        time.sleep(2)
-        elapsed = int(time.time() - start)
-        moved = False
-        for p, base in baselines.items():
-            if not os.path.exists(p) or os.path.getmtime(p) <= base:
-                continue
-            size = os.path.getsize(p)
-            moved = True
-            if size > 0 and size == sizes[p]:
-                stables[p] += 1
-                log(f"経過 {elapsed:3d}秒 / {p} = {size:,}B（安定 {stables[p]}/2）", 2)
-                if stables[p] >= 2:
-                    log(f"✓ CSVの更新を確認: {p}（{size:,} bytes）", 1)
-                    return p
+    last_size, stable = {}, {}
+    while time.time() - start < timeout:
+        existing = [p for p in cands if os.path.exists(p)]
+        if existing:
+            target = max(existing, key=os.path.getmtime)   # 既存の最新CSV
+            size = os.path.getsize(target)
+            if size > 0 and last_size.get(target) == size:
+                stable[target] = stable.get(target, 0) + 1
+                log(f"{target} = {size:,}B（安定 {stable[target]}/2）", 2)
+                if stable[target] >= 2:
+                    log(f"✓ 取り込むCSVを確定: {target}（{size:,} bytes）", 1)
+                    return target
             else:
-                sizes[p], stables[p] = size, 0
-                log(f"経過 {elapsed:3d}秒 / {p} = {size:,}B（書き込み中）", 2)
-        if not moved:
-            log(f"経過 {elapsed:3d}秒 / まだ更新なし", 2)
-    return None
+                last_size[target], stable[target] = size, 0
+                log(f"{target} = {size:,}B（サイズ確認中）", 2)
+        else:
+            log("CSVがまだ存在しません。出現を待機中...", 2)
+        time.sleep(2)
+
+    # タイムアウト時も、存在すれば最新を返す
+    existing = [p for p in cands if os.path.exists(p)]
+    return max(existing, key=os.path.getmtime) if existing else None
 
 
 # ----------------------------------------------------------------------
@@ -662,15 +672,14 @@ def main():
         log("✓ STEP1のみ完了（取り込みは行いません）", 0)
         return
 
-    # 全工程（FileMaker → CSV待機 → 取り込み）
-    baselines = {p: (os.path.getmtime(p) if os.path.exists(p) else 0.0) for p in cands}
+    # 全工程（FileMaker → CSV確定 → 取り込み）
     run_filemaker()
-    path = wait_for_fresh_csv(baselines)
+    path = wait_for_csv()          # 既存があればそれを取り込む（media-dbが上書きする前提）
     if not path:
         raise SystemExit(
-            "❌ 制限時間内に 逆引き.csv が更新されませんでした。\n"
-            "   ・media-db がCSVを書き出したか（デスクトップに 逆引き.csv ができるか）\n"
-            "   ・上の『CSV候補』に書き出し先が含まれているか\n"
+            "❌ 逆引き.csv が見つかりませんでした。\n"
+            "   ・media-db がデスクトップに 逆引き.csv を書き出しているか\n"
+            "   ・上の『CSV候補』に保存先が含まれているか\n"
             "   を確認してください。--import-only で手動CSVだけ取り込むことも可能です。"
         )
     import_csv(path)
